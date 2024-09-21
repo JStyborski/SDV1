@@ -89,7 +89,8 @@ def main():
     # JStyborski Edit #
     ###################
     opt.prompt = ''
-    opt.img_dir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Target_Imgs'
+    #opt.img_dir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Orig_Imgs'
+    opt.img_dir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Misted_Imgs\MIST_Target_Mode-0_16px'
     # opt.init_img = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Orig_Imgs\54550.png'
     opt.outdir = opt.img_dir
     opt.skip_save = False
@@ -98,18 +99,19 @@ def main():
     opt.ddim_eta = 0.0  # 0.0 = deterministic decoding
     opt.scale = 1.0  # Classifier-free guidance scale
     opt.strength = 1.0  # Denoising strength
-    opt.f = 8
+    opt.f = 8           # Downsampling factor, but unused
     opt.n_samples = 1
     opt.n_iter = 1
     opt.config = r'C:\Users\jeremy\Python_Projects\SDV1\configs\stable-diffusion\v1-inference.yaml'
-    opt.ckpt = r'C:\Users\jeremy\Python_Projects\SDV1\checkpoints\stable-diffusion-v1-5\v1-5-pruned-emaonly.ckpt'
+    opt.ckpt = r'C:\Users\jeremy\Python_Projects\SDV1\checkpoints\sdv15_finetuned_vae\v1-5-pruned-emaonly_AWA0887_LR2en3_Accum1_EMA0p9.ckpt'
     opt.deterministicVAE = True   # Use deterministic VAE (0 std for sampling)
     opt.deterministicDiff = None  # Use deterministic diffusion (set as None for no diffusion, just VAE)
     opt.useOrigTimesteps = False  # Use original DDIM sampler timesteps, if false, uses my custom timesteps
     opt.save_latents = True       # Save VAE and diffusion latents
-    opt.save_streamlines = True   # Save the entire encode/decode streamline for diffusion (only used if opt.deterministicDiff is True)
-    outFolderName = 'Diff_Reconstr_Imgs'
-    outFileSuffix = '_diff_recon_1p0.png'
+    opt.save_streamlines = False   # Save the entire encode/decode streamline for diffusion (only used if opt.deterministicDiff is True)
+    ckptSuffix = '_AWA0887_LR2en3_Accum1_EMA0p9'
+    outFolderName = 'Mean_Reconstr_Imgs' + ckptSuffix
+    outFileSuffix = '_mean_recon.png'
     ###################
 
     seed_everything(opt.seed)
@@ -151,16 +153,16 @@ def main():
     sample_path = os.path.join(outpath, outFolderName)
     os.makedirs(sample_path, exist_ok=True)
     if opt.save_latents:
-        mean_path = os.path.join(outpath, 'Lat_Mean')
+        mean_path = os.path.join(outpath, 'Lat_Mean' + ckptSuffix)
         os.makedirs(mean_path, exist_ok=True)
-        std_path = os.path.join(outpath, 'Lat_Std')
+        std_path = os.path.join(outpath, 'Lat_Std' + ckptSuffix)
         os.makedirs(std_path, exist_ok=True)
-        init_path = os.path.join(outpath, 'Lat_Init')
+        init_path = os.path.join(outpath, 'Lat_Init' + ckptSuffix)
         os.makedirs(init_path, exist_ok=True)
         if opt.deterministicDiff is not None:
-            i2n_path = os.path.join(outpath, 'Lat_I2N')
+            i2n_path = os.path.join(outpath, 'Lat_I2N' + ckptSuffix)
             os.makedirs(i2n_path, exist_ok=True)
-            n2i_path = os.path.join(outpath, 'Lat_N2I')
+            n2i_path = os.path.join(outpath, 'Lat_N2I' + ckptSuffix)
             os.makedirs(n2i_path, exist_ok=True)
     ###################
 
@@ -228,7 +230,6 @@ def main():
             sampler.ddim_sqrt_one_minus_alphas = to_torch(torch.sqrt(1 - sampler.ddim_alphas))
             sampler.ddim_sigmas = to_torch(opt.ddim_eta * torch.sqrt((1 - sampler.ddim_alphas_prev) / (1 - sampler.ddim_alphas)
                                                                      * (1 - sampler.ddim_alphas / sampler.ddim_alphas_prev)))
-
         ###################
 
         assert 0. <= opt.strength <= 1., 'Can only work with strength in [0.0, 1.0]'

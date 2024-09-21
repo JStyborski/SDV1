@@ -84,21 +84,6 @@ def main():
 
     opt = parser.parse_args()
 
-    ##########################################
-    # JStyborski Mods for Running in PyCharm #
-    ##########################################
-    opt.prompt = ''
-    opt.init_img = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Orig_Imgs\54550.png'
-    opt.outdir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    opt.scale = 1.0
-    opt.strength = 1.0
-    opt.f = 8
-    opt.n_samples = 1
-    opt.config = r'C:\Users\jeremy\Python_Projects\SDV1\configs\stable-diffusion\v1-inference.yaml'
-    opt.ckpt = r'C:\Users\jeremy\Python_Projects\SDV1\checkpoints\stable-diffusion-v1-5\v1-5-pruned-emaonly.ckpt'
-    opt.deterministic = True
-    ####
-
     seed_everything(opt.seed)
 
     config = OmegaConf.load(f"{opt.config}")

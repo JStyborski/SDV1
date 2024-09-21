@@ -17,15 +17,18 @@ dependencies:
     - invisible-watermark
     - imageio==2.9.0
     - imageio-ffmpeg==0.4.2
-    - pytorch-lightning==1.4.2
+    - pytorch-lightning==1.9.5  # Updated by JStyborski from 1.4.2 to accommodate easier VAE finetuning
     - omegaconf==2.1.1
     - test-tube>=0.7.5
     - streamlit>=0.73.1
     - einops==0.3.0
     - torch-fidelity==0.3.0
     - transformers==4.19.2
-    - torchmetrics==0.6.0
+    - torchmetrics==0.7.0  # Updated by JStyborski from 0.6.0 to comply with pl 1.9.5
     - kornia==0.6
+    - piq==0.8.0  # Added by JStyborski to support LPIPS loss - doesn't seem to cause issues
     - -e git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers
     - -e git+https://github.com/openai/CLIP.git@main#egg=clip
+    - advertorch@git+https://github.com/BorealisAI/advertorch.git  # Added by JStyborski to mimic MIST
     - -e .
+    
