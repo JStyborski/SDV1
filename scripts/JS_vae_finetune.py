@@ -1,28 +1,19 @@
 # Copied this script from https://github.com/Leminhbinh0209/FinetuneVAE-SD and then made extensive modifications
 
-from math import e
 import os
 from omegaconf import OmegaConf
 import numpy as np
-from datetime import datetime
-from tqdm import tqdm
 import torch
 import torch.optim as optim
-import torch.nn as nn
-import torch.nn.functional as F
-import random
 import pytorch_lightning as pl
 from torchvision import transforms
 from torch.utils.data import Dataset
 from pytorch_lightning import Trainer
-#from pytorch_lightning.loggers import WandbLogger
-#import wandb
 from PIL import Image
 from argparse import ArgumentParser
 from piq import LPIPS
 from ldm.util import   instantiate_from_config
 from ldm.modules.ema import LitEma
-from contextlib import contextmanager
 
 torch.cuda.empty_cache()
 
@@ -260,8 +251,8 @@ if __name__ == '__main__':
         val_dl = None
 
     # Instantiate PL module
-    vae_plmod = FinetuneVAE(vae_config=vae_config, vae_weights=vae_weights, kl_loss_weight=args.kl_loss_weight, lpips_loss_weight=args.lpips_loss_weight,
-                        lr=args.lr, ema_decay=args.ema_decay, precision=args.precision, log_dir=log_dir)
+    vae_plmod = FinetuneVAE(vae_config=vae_config, vae_weights=vae_weights, kl_loss_weight=args.kl_loss_weight,
+                            lpips_loss_weight=args.lpips_loss_weight, lr=args.lr, ema_decay=args.ema_decay, precision=args.precision, log_dir=log_dir)
     vae_plmod = vae_plmod.to(device)
 
     # Instantiate PL Trainer

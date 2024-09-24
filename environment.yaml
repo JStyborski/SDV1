@@ -27,6 +27,7 @@ dependencies:
     - torchmetrics==0.7.0  # Updated by JStyborski from 0.6.0 to comply with pl 1.9.5
     - kornia==0.6
     - piq==0.8.0  # Added by JStyborski to support LPIPS loss - doesn't seem to cause issues
+    - accelerate==0.34.2  # Added by JStyborski to support text-inversion script
     - -e git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers
     - -e git+https://github.com/openai/CLIP.git@main#egg=clip
     - advertorch@git+https://github.com/BorealisAI/advertorch.git  # Added by JStyborski to mimic MIST

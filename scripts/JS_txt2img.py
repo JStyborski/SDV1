@@ -1,4 +1,5 @@
 import argparse, os, sys, glob
+from distutils.util import strtobool
 import cv2
 import torch
 import numpy as np
@@ -117,11 +118,21 @@ def main():
     parser.add_argument("--n_rows", type=int, default=0, help="rows in the grid (default: n_samples)")
     parser.add_argument("--scale", type=float, default=7.5, help="unconditional guidance scale: eps = eps(x, empty) + scale * (eps(x, cond) - eps(x, empty))")
     parser.add_argument("--from-file", type=str, help="if specified, load prompts from this file")
-    parser.add_argument("--config", type=str, default="configs/stable-diffusion/v1-inference.yaml", help="path to config which constructs model")
-    parser.add_argument("--ckpt", type=str, default="models/ldm/stable-diffusion-v1/model.ckpt", help="path to checkpoint of model")
+    parser.add_argument("--config", type=str, default='../configs/stable-diffusion/v1-inference.yaml', help="path to config which constructs model")
+    parser.add_argument("--ckpt", type=str, default='../checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help="path to checkpoint of model")
     parser.add_argument("--seed", type=int, default=42, help="the seed (for reproducible sampling)")
     parser.add_argument("--precision", type=str, help="evaluate at this precision", choices=["full", "autocast"], default="autocast")
+    parser.add_argument("--use_wm", default=False, type=lambda x: bool(strtobool(x)), help="Use watermarking")
     opt = parser.parse_args()
+
+    #################
+    # JStyborski Edit
+    opt.n_iter = 1
+    opt.H = 256
+    opt.W = 256
+    opt.n_samples = 1
+    opt.prompt = 'A painting of RNG_Orig'
+    #################
 
     if opt.laion400m:
         print("Falling back to LAION 400M model...")
@@ -133,6 +144,25 @@ def main():
 
     config = OmegaConf.load(f"{opt.config}")
     model = load_model_from_config(config, f"{opt.ckpt}")
+
+    #################
+    # JStyborski Edit
+
+    # Load pretrained text embeddings
+    text_inv_dict = {}
+    for f in os.listdir(r'../text_inversion'):
+        pt_file = torch.load(os.path.join(os.getcwd(), r'../text_inversion', f))
+        text_inv_dict.update(pt_file)
+
+    # Add tokens into tokenizer and resize the embedding dictionary
+    model.cond_stage_model.tokenizer.add_tokens(list(text_inv_dict.keys()))
+    model.cond_stage_model.transformer.resize_token_embeddings(len(model.cond_stage_model.tokenizer))
+
+    # Overwrite the new embedding dictionary entries with the trained embeddings
+    token_embeds = model.cond_stage_model.transformer.get_input_embeddings().weight.data
+    emb_tens = torch.stack(list(text_inv_dict.values()), dim=0)
+    token_embeds[-len(text_inv_dict):] = emb_tens
+    #################
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
@@ -147,10 +177,13 @@ def main():
     os.makedirs(opt.outdir, exist_ok=True)
     outpath = opt.outdir
 
-    print("Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...")
     wm = "StableDiffusionV1"
-    wm_encoder = WatermarkEncoder()
-    wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
+    if opt.use_wm:
+        print("Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...")
+        wm_encoder = WatermarkEncoder()
+        wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
+    else:
+        wm_encoder = None
 
     batch_size = opt.n_samples
     n_rows = opt.n_rows if opt.n_rows > 0 else batch_size

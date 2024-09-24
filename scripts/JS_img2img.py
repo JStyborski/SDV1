@@ -18,7 +18,7 @@ from pytorch_lightning import seed_everything
 from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
-import img2noise2img
+import JS_img2noise2img
 
 
 def chunk(it, size):
@@ -268,8 +268,8 @@ def main():
                                 samples = init_latent
                             elif opt.deterministicDiff:
                                 # Deterministic encode/decode
-                                noise_latent, i2nList = img2noise2img.image_to_noise(init_latent, model, sampler, t_enc, cond=c, uncond=uc, record_latents=opt.save_streamlines)
-                                samples, n2iList = img2noise2img.noise_to_image(noise_latent, model, sampler, t_enc, cond=c, uncond=uc, record_latents=opt.save_streamlines)
+                                noise_latent, i2nList = JS_img2noise2img.image_to_noise(init_latent, model, sampler, t_enc, cond=c, uncond=uc, record_latents=opt.save_streamlines)
+                                samples, n2iList = JS_img2noise2img.noise_to_image(noise_latent, model, sampler, t_enc, cond=c, uncond=uc, record_latents=opt.save_streamlines)
                                 if opt.save_latents and opt.save_streamlines:
                                     torch.save(torch.stack(i2nList), os.path.join(i2n_path, fileName + '_i2n_sl.pt'))
                                     torch.save(torch.stack(n2iList), os.path.join(n2i_path, fileName + '_n2i_sl.pt'))

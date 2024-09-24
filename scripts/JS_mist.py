@@ -1,3 +1,5 @@
+# Copied the repo from https://github.com/psyker-team/mist and then simplified/cleaned their library significantly to the below script
+
 import argparse
 from distutils.util import strtobool
 from omegaconf import OmegaConf
