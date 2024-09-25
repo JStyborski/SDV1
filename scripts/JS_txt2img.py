@@ -127,11 +127,11 @@ def main():
 
     #################
     # JStyborski Edit
-    opt.n_iter = 1
-    opt.H = 256
-    opt.W = 256
+    opt.n_iter = 16
+    opt.H = 512
+    opt.W = 512
     opt.n_samples = 1
-    opt.prompt = 'A painting of RNG_Orig'
+    opt.prompt = 'A painting of a bird by RNG_Orig.'
     #################
 
     if opt.laion400m:
@@ -150,8 +150,8 @@ def main():
 
     # Load pretrained text embeddings
     text_inv_dict = {}
-    for f in os.listdir(r'../text_inversion'):
-        pt_file = torch.load(os.path.join(os.getcwd(), r'../text_inversion', f))
+    for f in os.listdir(r'../text_inv_embeddings'):
+        pt_file = torch.load(os.path.join(os.getcwd(), r'../text_inv_embeddings', f))
         text_inv_dict.update(pt_file)
 
     # Add tokens into tokenizer and resize the embedding dictionary

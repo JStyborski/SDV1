@@ -18,9 +18,10 @@ from ldm.modules.ema import LitEma
 torch.cuda.empty_cache()
 
 class FinetuneDataset(Dataset):
-    def __init__(self, data_dir: str, transform):
+    def __init__(self, data_dir: str, inp_transform, trg_transform):
         self.data_dir = data_dir
-        self.transform = transform
+        self.inp_transform = inp_transform
+        self.trg_transform = trg_transform
         self.img_list = sorted([u for u in os.listdir(self.data_dir) if u.endswith(".png") or u.endswith(".jpg")])
 
     def __len__(self):
@@ -28,9 +29,9 @@ class FinetuneDataset(Dataset):
 
     def __getitem__(self, idx):
         img = Image.open(os.path.join(self.data_dir, self.img_list[idx])).convert('RGB')
-        if self.transform is not None:
-            img = self.transform(img)
-        return img, self.img_list[idx]
+        inp_img = self.inp_transform(img)
+        trg_img = self.trg_transform(img)
+        return inp_img, trg_img, self.img_list[idx]
 
 class GaussianNoise(object):
     def __init__(self, sigma=0.5):
@@ -75,19 +76,20 @@ class FinetuneVAE(pl.LightningModule):
     def training_step(self, batch, batch_idx):
 
         # Get images from batch and change precision (if desired)
-        target, _ = batch
+        inp_img, trg_img, _ = batch
         if self.precision == 16:
-            target = target.half()
+            inp_img = inp_img.half()
+            trg_img = trg_img.half()
 
         # Encode, sample, decode
-        posterior = self.model.encode(target)
+        posterior = self.model.encode(inp_img)
         z = posterior.sample()
         pred = self.model.decode(z)
 
         # Calculate latent prior KLDiv loss, LPIPS loss, and reconstruction loss
         kl_loss = posterior.kl().mean()
-        lpips_loss = self.lpips_loss_fn(pred, target).mean()
-        rec_loss = torch.abs(target.contiguous() - pred.contiguous())
+        lpips_loss = self.lpips_loss_fn(pred, trg_img).mean()
+        rec_loss = torch.abs(trg_img.contiguous() - pred.contiguous())
         if self.current_epoch < self.trainer.max_epochs // 3 * 2:
             rec_loss = rec_loss.mean() * rec_loss.size(1)  # L1 loss at epoch < 2/3 max_epochs
             loss = self.kl_loss_weight * kl_loss + self.lpips_loss_weight * lpips_loss + rec_loss
@@ -110,15 +112,16 @@ class FinetuneVAE(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         # Same as training_step, with slightly different logging
-        target, name = batch
+        inp_img, trg_img, _ = batch
         if self.precision == 16:
-            target = target.half()
-        posterior = self.model.encode(target)
+            inp_img = inp_img.half()
+            trg_img = trg_img.half()
+        posterior = self.model.encode(inp_img)
         z = posterior.mode()
         pred = self.model.decode(z)
         kl_loss = posterior.kl().mean()
-        lpips_loss = self.lpips_loss_fn(pred, target).mean()
-        rec_loss = torch.abs(target.contiguous() - pred.contiguous())
+        lpips_loss = self.lpips_loss_fn(pred, trg_img).mean()
+        rec_loss = torch.abs(trg_img.contiguous() - pred.contiguous())
         if self.current_epoch < self.trainer.max_epochs // 3 * 2:
             rec_loss = rec_loss.mean() * rec_loss.size(1)  # L1 loss at epoch < 2/3 max_epochs
             loss = self.kl_loss_weight * kl_loss + self.lpips_loss_weight * lpips_loss + rec_loss
@@ -126,7 +129,7 @@ class FinetuneVAE(pl.LightningModule):
             rec_loss = rec_loss.pow(2).mean() * rec_loss.size(1)  # L2 loss at epoch >= 2/3 max_epochs
             loss = self.kl_loss_weight * kl_loss + 0.1 * self.lpips_loss_weight * lpips_loss + rec_loss  # 0.1x LPIPS at epoch >= 2/3 max_epochs
         self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log_images(target, pred, name)
+        self.log_images(trg_img, pred)
         return {"kl_loss": kl_loss, "lpips_loss": lpips_loss, "rec_loss": rec_loss, 'val_loss': loss}
 
     def on_validation_end(self, validation_step_outputs):
@@ -233,19 +236,24 @@ if __name__ == '__main__':
     vae_config = config.model
     vae_weights = get_vae_weights(args.sd_ckpt)
 
-    # Define image transform
-    transform = transforms.Compose([
+    # Define transforms for VAE input and reconstruction target
+    inp_transform = transforms.Compose([
         transforms.Resize((args.image_size, args.image_size)),
         transforms.ToTensor(),
-        GaussianNoise(0.1774),
+        GaussianNoise(0.0887),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # Performs the expected 2 * [0, 1] - 1 operation for LDM
+    ])
+    trg_transform = transforms.Compose([
+        transforms.Resize((args.image_size, args.image_size)),
+        transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # Performs the expected 2 * [0, 1] - 1 operation for LDM
     ])
 
     # Define datasets and dataloaders
-    train_ds = FinetuneDataset(args.train_root, transform)
+    train_ds = FinetuneDataset(args.train_root, inp_transform, trg_transform)
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=4, drop_last=False)
     if args.val_root is not None:
-        val_ds = FinetuneDataset(args.val_root, transform)
+        val_ds = FinetuneDataset(args.val_root, trg_transform, trg_transform)
         val_dl = torch.utils.data.DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=4, drop_last=False)
     else:
         val_dl = None

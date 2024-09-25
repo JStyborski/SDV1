@@ -2,4 +2,4 @@
 __pycache__/
 .idea/
 vae_finetune/
-text_inversion/
+text_inv_embeddings/

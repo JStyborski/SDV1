@@ -1,31 +1,29 @@
-# Copied cell-by-cell from https://blog.paperspace.com/dreambooth-stable-diffusion-tutorial-part-2-textual-inversion/ and then simplified
+# Copied cell-by-cell from https://blog.paperspace.com/dreambooth-stable-diffusion-tutorial-part-2-textual-inversion/ and then modified extensively
 
-#@title Import required libraries
+import accelerate
 import argparse
 from distutils.util import strtobool
 import math
 import os
 from PIL import Image
 import random
-
 import torch
 import torch.utils.checkpoint
 from torch.utils.data import Dataset
 import torchvision.transforms as tvt
+from tqdm.auto import tqdm
 
 from omegaconf import OmegaConf
 from img2img import load_model_from_config
 
-import accelerate
-from tqdm.auto import tqdm
-
 class TextualInversionDataset(Dataset):
-    def __init__(self, img_src_dir, img_repeats=100, img_size=512, center_crop=False, flip_pct=0.5, new_token="*", learnable_property='object'):
+    def __init__(self, img_src_dir, img_repeats=100, img_size=512, center_crop=False, flip_pct=0.5, new_token="*", concept_type='object', use_filewords=True):
         self.img_src_dir = img_src_dir
         self.new_token = new_token
 
         # Open the set of prompt templates for the token
-        with open('./text_inversion/{}_prompts.txt'.format(learnable_property), 'r') as f:
+        prompt_file = f'./text_inversion/{concept_type}_filewords_prompts.txt' if use_filewords else './text_inversion/{concept_type}_prompts.txt'
+        with open(prompt_file, 'r') as f:
             self.prompt_templates = f.read().splitlines()
 
         # Read the dataset of images
@@ -44,10 +42,23 @@ class TextualInversionDataset(Dataset):
     def __len__(self):
         return self._length
 
+    def create_text(self, filename_text):
+        # Copied from SD WebUI
+        text = random.choice(self.prompt_templates)
+        tags = filename_text.replace('_', ',').replace('-', ',').replace(' ', ',').split(',')
+        # if self.tag_drop_out != 0:
+        #     tags = [t for t in tags if random.random() > self.tag_drop_out]
+        # if self.shuffle_tags:
+        #     random.shuffle(tags)
+        text = text.replace('[filewords]', ' '.join(tags))
+        text = text.replace('[name]', self.new_token)
+        return text
+
     def __getitem__(self, i):
         example = {}
-        example['text_values'] = random.choice(self.prompt_templates).format(self.new_token)
-        img = Image.open(os.path.join(self.img_src_dir, self.img_list[i % len(self.img_list)])).convert('RGB')
+        filename, fileext = os.path.splitext(self.img_list[i % len(self.img_list)])
+        example['text_values'] = self.create_text(filename)
+        img = Image.open(os.path.join(self.img_src_dir, filename + fileext)).convert('RGB')
         example['pixel_values'] = self.transform(img)
 
         return example
@@ -73,8 +84,9 @@ def training_function(args, train_dataset, model):
     model.eval()
     model.cond_stage_model.transformer.train()
 
-    # Recalculate our total training steps as the size of the training dataloader may have changed.
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.accum_iter)
+    # Determine number of epochs required to achieve given steps
+    # If batch_size * accum_iter * n_procs > dataset size, step/zero_grad triggers at end of dataset instead of carrying through to next epoch
+    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / (args.batch_size * args.accum_iter * args.n_procs))
     num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
     # Only show the progress bar once on each machine.
@@ -83,13 +95,17 @@ def training_function(args, train_dataset, model):
     global_step = 0
 
     for epoch in range(num_train_epochs):
-        #model.eval()
-        #model.cond_stage_model.transformer.train()
         for step, batch in enumerate(train_dataloader):
             with accelerator.accumulate(model):
 
                 # Get image encoding and text encoding, then process both in unet model
-                z = model.get_first_stage_encoding(model.encode_first_stage(batch['pixel_values']))
+                # Might need to use model.module for multi GPU
+                z_dist = model.encode_first_stage(batch['pixel_values'])
+                if args.vae_sampling == 'deterministic':
+                    # If True, latent always returns mean vector, else samples
+                    z_dist.deterministic = True
+                    z_dist.var = z_dist.std = torch.zeros_like(z_dist.mean).to(device=z_dist.parameters.device)
+                z = model.get_first_stage_encoding(z_dist)
                 c = model.get_learned_conditioning(batch['text_values'])
                 loss = model(z, c)[0]
                 accelerator.backward(loss)
@@ -123,9 +139,11 @@ def training_function(args, train_dataset, model):
         accelerator.wait_for_everyone()
 
     # Save the newly trained embeddings
-    learned_embeds = accelerator.unwrap_model(accelerator.unwrap_model(text_encoder)).get_input_embeddings().weight[args.new_token_id]
-    learned_embeds_dict = {args.new_token: learned_embeds.detach().cpu()}
-    torch.save(learned_embeds_dict, os.path.join(args.output_dir, args.new_token + '.pt'))
+    if accelerator.is_main_process:
+        learned_embeds = accelerator.unwrap_model(accelerator.unwrap_model(text_encoder)).get_input_embeddings().weight[args.new_token_id]
+        learned_embeds_dict = {args.new_token: learned_embeds.detach().cpu()}
+        os.makedirs(r'../text_inv_embeddings', exist_ok=True)
+        torch.save(learned_embeds_dict, os.path.join(r'../text_inv_embeddings', args.new_token + '.pt'))
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -133,17 +151,19 @@ def parse_args():
     parser.add_argument('--sd_ckpt', default='../checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', type=str, help='Path to checkpoint of model')
     parser.add_argument('--img_src_dir', default=None, type=str, help='Path of the directory of images to be processed.')
     parser.add_argument('--new_token', default='RRRRR', type=str, help='Name of token embedding to learn.')
-    parser.add_argument('--init_token', default=None, type=str, help='String for to initial embedding for new token. Set as None for zeros init. Set as empty string for N(0,1) init.')
+    parser.add_argument('--init_token', default='*', type=str, help='String for to initial embedding for new token. Set as None for zeros init. Set as empty string for N(0,1) init.')
     parser.add_argument('--concept_type', default='object', choices=['object', 'style'], type=str, help='Is the new token an object or a style?')
-    parser.add_argument('--img_repeats', default=1, type=int, help='Inflates the size of the source dataset to reduce number of epochs.')
+    parser.add_argument('--use_filewords', default=True, type=lambda x: bool(strtobool(x)), help='Whether to use filename text as tags in prompt.')
+    parser.add_argument('--img_repeats', default=1, type=int, help='Inflates the size of the source dataset to permit larger batch_size * accum_iter updates.')
     parser.add_argument('--img_size', default=512, type=int, help='Image size to input to LDM (after resize).')
     parser.add_argument('--center_crop', default=False, type=lambda x: bool(strtobool(x)), help='Boolean to center-crop images before resizing.')
     parser.add_argument('--flip_pct', default=0.5, type=float, help='Percentage chance for image horizontal flip.')
-    parser.add_argument('--base_lr', default=5e-4, type=float, help='Base learning rate before scaling by num_processes, batch_size, and accum_iter.')
+    parser.add_argument('--base_lr', default=5e-3, type=float, help='Base learning rate before scaling by num_processes, batch_size, and accum_iter.')
     parser.add_argument('--scale_lr', default=True, type=lambda x: bool(strtobool(x)), help='Boolean to rescale base_lr.')
     parser.add_argument('--batch_size', default=1, type=int, help='Total batch size across GPUs per iteration (before accumulation)')
     parser.add_argument('--accum_iter', default=1, type=int, help='Number of iterations to accumulate gradients before backpropagation.')
-    parser.add_argument('--max_train_steps', default=30, type=int, help='Maximum number of training steps before exit.')
+    parser.add_argument('--max_train_steps', default=10000, type=int, help='Maximum number of training steps before exit.')
+    parser.add_argument('--vae_sampling', default='random', choices=['random', 'deterministic'], type=str, help='Encoding distribution sampling method - deterministic sets var/std to 0.')
     parser.add_argument('--rand_seed', default=42, type=int, help='RNG seed for reproducibility.')
     args = parser.parse_args()
     return args
@@ -156,14 +176,13 @@ if __name__ == '__main__':
 
     #################
     # JStyborski Edit
-    args.new_token = 'RNG_Orig'
+    args.new_token = 'RNG_Orig_512'
+    #args.init_token = 'abstract'
     args.img_src_dir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    args.img_size = 256
+    args.img_size = 512
+    args.vae_sampling = 'deterministic'
+    args.concept_type = 'style'
     #################
-
-    # Initialize token and output directory arguments
-    args.output_dir = r'../text_inversion'
-    os.makedirs(args.output_dir, exist_ok=True)
 
     # Rescale parameters by the number of available processes (GPUs)
     args.n_procs = torch.cuda.device_count()
@@ -173,7 +192,7 @@ if __name__ == '__main__':
     # Instantiate train dataset
     train_dataset = TextualInversionDataset(img_src_dir=args.img_src_dir, img_repeats=args.img_repeats, img_size=args.img_size,
                                             center_crop=args.center_crop, flip_pct=args.flip_pct, new_token=args.new_token,
-                                            learnable_property=args.concept_type)
+                                            concept_type=args.concept_type, use_filewords=args.use_filewords)
 
     # Load model
     config = OmegaConf.load(os.path.join(os.getcwd(), args.sd_config))

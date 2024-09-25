@@ -26,9 +26,12 @@ def run_main():
     # jpg_to_png(imgDir)
 
     # File Renamer
-    imgsDir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Misted_Imgs\MIST_Target_Mode-2_16px'
-    fileCaptDict = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions\file_caption_dict.npy'
+    imgsDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
+    fileCaptDict = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions\file_caption_dict.npy'
     file_caption_renamer(imgsDir, fileCaptDict, file2Capt=True)
+
+    # textDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions'
+    # create_file_capt_dict(imgsDir, textDir)
 
 
 def clip_embedding_searcher(srcImg, searchDir, nSamples, batchSize, findNearest=True):
@@ -153,11 +156,11 @@ def create_file_capt_dict(imgsDir, textDir):
 
         # Only process .png files
         fileName, fileExt = os.path.splitext(file)
-        if not os.path.isfile(file) or fileExt != '.png':
+        if not os.path.isfile(os.path.join(imgsDir, file)) or fileExt != '.png':
             continue
 
         # Read image description contained in corresponding text file
-        with open(os.path.join(textDir, fileName + '_NoArtist.txt'), 'r', encoding='utf-8', errors='ignore') as f:
+        with open(os.path.join(textDir, fileName + '_Cleaned.txt'), 'r', encoding='utf-8', errors='ignore') as f:
             line = f.readlines()
 
         # Remove problematic characters
