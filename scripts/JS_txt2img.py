@@ -142,8 +142,8 @@ def main():
 
     # Load pretrained text embeddings
     text_inv_dict = {}
-    for f in os.listdir(r'../text_inv_embeddings'):
-        pt_file = torch.load(os.path.join(os.getcwd(), r'../text_inv_embeddings', f))
+    for f in os.listdir(r'./text_inv_embeddings'):
+        pt_file = torch.load(os.path.join(os.getcwd(), r'./text_inv_embeddings', f))
         text_inv_dict.update(pt_file)
 
     # Add tokens into tokenizer and resize the embedding dictionary

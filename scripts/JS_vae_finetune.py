@@ -178,38 +178,34 @@ def get_vae_weights(input_path):
 
     return vae_weight
 
-def argument_inputs():
-
+def arg_inputs():
     parser = ArgumentParser()
-
+    parser.add_argument("--vae_config", type=str, default="./configs/autoencoder/v1-vae.yaml", help='Path to config which constructs model')
+    parser.add_argument("--sd_ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help='Path to checkpoint of model')
     parser.add_argument('--train_root', type=str, default=None, help='The directory that contains training images')
     parser.add_argument('--val_root', type=str, default=None, help='The directory that contains validation images - set as None for no validation')
     parser.add_argument('--output_dir', type=str, default='./vae_finetune', help='Directory to save outputs')
     parser.add_argument('--save_interval', type=int, default=10, help='Save model checkpoint every n epochs')
     parser.add_argument('--log_prefix', type=str, default='', help='Prefix title for log file')
-    parser.add_argument("--vae_config", type=str, default="./configs/autoencoder/v1-vae.yaml", help='Path to config which constructs model')
-    parser.add_argument("--sd_ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help='Path to checkpoint of model')
     parser.add_argument('--strategy', type=str, default='single_device', choices=['single_device', 'ddp'], help='Method for single/multi process training')
     parser.add_argument('--precision', type=int, default=16, choices=[16, 32], help='Floating point precision for torch tensors.')
-    parser.add_argument('--image_size', type=int, default=256, help='Image input and output height/width, no cropping performed.')
-    parser.add_argument('--num_epochs', type=int, default=10)
+    parser.add_argument('--img_size', type=int, default=256, help='Image input and output height/width, no cropping performed.')
+    parser.add_argument('--num_epochs', type=int, default=10, help='Number of finetuning epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='Total batch size across GPUs per iteration (before accumulation)')
     parser.add_argument('--accum_iter', type=int, default=1, help='Number of batches to accumulate gradients before backpropagation')
     parser.add_argument('--kl_loss_weight', type=float, default=0.)
     parser.add_argument('--lpips_loss_weight', type=float, default=1.)
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--ema_decay', type=float, default=0.99, help="Use use_ema")
-
     args = parser.parse_args()
-
     return args
 
 if __name__ == '__main__':
 
-    args = argument_inputs()
+    args = arg_inputs()
 
     # Set output filename and directory
-    file_names = f"{args.log_prefix}_imgsize({args.image_size})_epochs({args.num_epochs})_bs({args.batch_size})_accum({args.accum_iter})" \
+    file_names = f"{args.log_prefix}_imgsize({args.img_size})_epochs({args.num_epochs})_bs({args.batch_size})_accum({args.accum_iter})" \
                  f"_kl({args.kl_loss_weight})_lpips({args.lpips_loss_weight})_lr({args.lr})_ema({args.ema_decay})"
     log_dir = f"{args.output_dir}/{file_names}"
     os.makedirs(log_dir, exist_ok=True)
@@ -230,13 +226,13 @@ if __name__ == '__main__':
 
     # Define transforms for VAE input and reconstruction target
     inp_transform = transforms.Compose([
-        transforms.Resize((args.image_size, args.image_size)),
+        transforms.Resize((args.img_size, args.img_size)),
         transforms.ToTensor(),
         GaussianNoise(0.0887),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # Performs the expected 2 * [0, 1] - 1 operation for LDM
     ])
     trg_transform = transforms.Compose([
-        transforms.Resize((args.image_size, args.image_size)),
+        transforms.Resize((args.img_size, args.img_size)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # Performs the expected 2 * [0, 1] - 1 operation for LDM
     ])

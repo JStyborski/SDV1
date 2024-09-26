@@ -17,8 +17,8 @@ from omegaconf import OmegaConf
 from img2img import load_model_from_config
 
 class TextualInversionDataset(Dataset):
-    def __init__(self, img_src_dir, img_repeats=100, img_size=512, center_crop=False, flip_pct=0.5, new_token="*", concept_type='object', use_filewords=True):
-        self.img_src_dir = img_src_dir
+    def __init__(self, src_img_dir, img_repeats=100, img_size=512, center_crop=False, flip_pct=0.5, new_token="*", concept_type='object', use_filewords=True):
+        self.src_img_dir = src_img_dir
         self.new_token = new_token
 
         # Open the set of prompt templates for the token
@@ -27,7 +27,7 @@ class TextualInversionDataset(Dataset):
             self.prompt_templates = f.read().splitlines()
 
         # Read the dataset of images
-        self.img_list = sorted([f for f in os.listdir(self.img_src_dir) if f.endswith('.png') or f.endswith('.jpg')])
+        self.img_list = sorted([f for f in os.listdir(self.src_img_dir) if f.endswith('.png') or f.endswith('.jpg')])
         self._length = len(self.img_list) * img_repeats
 
         # Define image transform
@@ -58,7 +58,7 @@ class TextualInversionDataset(Dataset):
         example = {}
         filename, fileext = os.path.splitext(self.img_list[i % len(self.img_list)])
         example['text_values'] = self.create_text(filename)
-        img = Image.open(os.path.join(self.img_src_dir, filename + fileext)).convert('RGB')
+        img = Image.open(os.path.join(self.src_img_dir, filename + fileext)).convert('RGB')
         example['pixel_values'] = self.transform(img)
 
         return example
@@ -145,11 +145,11 @@ def training_function(args, train_dataset, model):
         os.makedirs(r'./text_inv_embeddings', exist_ok=True)
         torch.save(learned_embeds_dict, os.path.join(r'./text_inv_embeddings', args.new_token + '.pt'))
 
-def parse_args():
+def arg_inputs():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sd_config', default='./configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model')
     parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', type=str, help='Path to checkpoint of model')
-    parser.add_argument('--img_src_dir', default=None, type=str, help='Path of the directory of images to be processed.')
+    parser.add_argument('--src_img_dir', default=None, type=str, help='Path of the directory of images to be processed.')
     parser.add_argument('--new_token', default='RRRRR', type=str, help='Name of token embedding to learn.')
     parser.add_argument('--init_token', default='*', type=str, help='String for to initial embedding for new token. Set as None for zeros init. Set as empty string for N(0,1) init.')
     parser.add_argument('--concept_type', default='object', choices=['object', 'style'], type=str, help='Is the new token an object or a style?')
@@ -170,7 +170,7 @@ def parse_args():
 
 if __name__ == '__main__':
 
-    args = parse_args()
+    args = arg_inputs()
     accelerate.utils.set_seed(args.rand_seed)
     # Other seeds?
 
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     args.lr = args.base_lr * args.batch_size * args.accum_iter * args.n_procs if args.scale_lr else args.base_lr
 
     # Instantiate train dataset
-    train_dataset = TextualInversionDataset(img_src_dir=args.img_src_dir, img_repeats=args.img_repeats, img_size=args.img_size,
+    train_dataset = TextualInversionDataset(src_img_dir=args.src_img_dir, img_repeats=args.img_repeats, img_size=args.img_size,
                                             center_crop=args.center_crop, flip_pct=args.flip_pct, new_token=args.new_token,
                                             concept_type=args.concept_type, use_filewords=args.use_filewords)
 
