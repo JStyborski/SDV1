@@ -68,8 +68,8 @@ class identity_loss(torch.nn.Identity):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Configs for Mist V1.2')
-    parser.add_argument('--sd_config', default='../configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model')
-    parser.add_argument('--sd_ckpt', default='../checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', type=str, help='Path to checkpoint of model')
+    parser.add_argument('--sd_config', default='./configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model')
+    parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', type=str, help='Path to checkpoint of model')
     parser.add_argument('--src_dir_path', default=None, type=str, help='Path of the directory of images to be processed.')
     parser.add_argument('--src_is_obj', default=False, type=lambda x: bool(strtobool(x)), help='Whether the images to poison is an object or style.')
     parser.add_argument('--tgt_img_path', default=r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Target_Imgs\MIST_Target_512.png')
@@ -87,12 +87,6 @@ def parse_args():
 if __name__ == "__main__":
 
     args = parse_args()
-
-    # JStyborski overwrite:
-    args.src_dir_path = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    args.input_size = 256
-    args.output_dir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Misted_Imgs\test'
-
     seed_everything(23)
 
     # Process args inputs

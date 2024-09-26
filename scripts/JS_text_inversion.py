@@ -22,7 +22,7 @@ class TextualInversionDataset(Dataset):
         self.new_token = new_token
 
         # Open the set of prompt templates for the token
-        prompt_file = f'./text_inversion/{concept_type}_filewords_prompts.txt' if use_filewords else './text_inversion/{concept_type}_prompts.txt'
+        prompt_file = f'./scripts/text_inv_prompts/{concept_type}_filewords_prompts.txt' if use_filewords else './scripts/text_inv_prompts/{concept_type}_prompts.txt'
         with open(prompt_file, 'r') as f:
             self.prompt_templates = f.read().splitlines()
 
@@ -142,13 +142,13 @@ def training_function(args, train_dataset, model):
     if accelerator.is_main_process:
         learned_embeds = accelerator.unwrap_model(accelerator.unwrap_model(text_encoder)).get_input_embeddings().weight[args.new_token_id]
         learned_embeds_dict = {args.new_token: learned_embeds.detach().cpu()}
-        os.makedirs(r'../text_inv_embeddings', exist_ok=True)
-        torch.save(learned_embeds_dict, os.path.join(r'../text_inv_embeddings', args.new_token + '.pt'))
+        os.makedirs(r'./text_inv_embeddings', exist_ok=True)
+        torch.save(learned_embeds_dict, os.path.join(r'./text_inv_embeddings', args.new_token + '.pt'))
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sd_config', default='../configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model')
-    parser.add_argument('--sd_ckpt', default='../checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', type=str, help='Path to checkpoint of model')
+    parser.add_argument('--sd_config', default='./configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model')
+    parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', type=str, help='Path to checkpoint of model')
     parser.add_argument('--img_src_dir', default=None, type=str, help='Path of the directory of images to be processed.')
     parser.add_argument('--new_token', default='RRRRR', type=str, help='Name of token embedding to learn.')
     parser.add_argument('--init_token', default='*', type=str, help='String for to initial embedding for new token. Set as None for zeros init. Set as empty string for N(0,1) init.')
@@ -173,16 +173,6 @@ if __name__ == '__main__':
     args = parse_args()
     accelerate.utils.set_seed(args.rand_seed)
     # Other seeds?
-
-    #################
-    # JStyborski Edit
-    args.new_token = 'RNG_Orig_512'
-    #args.init_token = 'abstract'
-    args.img_src_dir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    args.img_size = 512
-    args.vae_sampling = 'deterministic'
-    args.concept_type = 'style'
-    #################
 
     # Rescale parameters by the number of available processes (GPUs)
     args.n_procs = torch.cuda.device_count()

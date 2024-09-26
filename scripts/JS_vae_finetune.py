@@ -182,13 +182,13 @@ def argument_inputs():
 
     parser = ArgumentParser()
 
-    parser.add_argument('--train_root', type=str, default='./dataset/', help='The directory that contains training images')
+    parser.add_argument('--train_root', type=str, default=None, help='The directory that contains training images')
     parser.add_argument('--val_root', type=str, default=None, help='The directory that contains validation images - set as None for no validation')
-    parser.add_argument('--output_dir', type=str, default='../vae_finetune', help='Directory to save outputs')
+    parser.add_argument('--output_dir', type=str, default='./vae_finetune', help='Directory to save outputs')
     parser.add_argument('--save_interval', type=int, default=10, help='Save model checkpoint every n epochs')
     parser.add_argument('--log_prefix', type=str, default='', help='Prefix title for log file')
-    parser.add_argument("--vae_config", type=str, default="../configs/autoencoder/v1-vae.yaml", help='Path to config which constructs model')
-    parser.add_argument("--sd_ckpt", type=str, default='../checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help='Path to checkpoint of model')
+    parser.add_argument("--vae_config", type=str, default="./configs/autoencoder/v1-vae.yaml", help='Path to config which constructs model')
+    parser.add_argument("--sd_ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help='Path to checkpoint of model')
     parser.add_argument('--strategy', type=str, default='single_device', choices=['single_device', 'ddp'], help='Method for single/multi process training')
     parser.add_argument('--precision', type=int, default=16, choices=[16, 32], help='Floating point precision for torch tensors.')
     parser.add_argument('--image_size', type=int, default=256, help='Image input and output height/width, no cropping performed.')
@@ -207,14 +207,6 @@ def argument_inputs():
 if __name__ == '__main__':
 
     args = argument_inputs()
-
-    # JStyborski Edits
-    args.train_root = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    args.num_epochs = 200
-    args.save_interval = 1
-    args.batch_size = 1
-    args.lr = 0.00002
-    args.log_prefix = 'RNG_Orig_GN0p1774'
 
     # Set output filename and directory
     file_names = f"{args.log_prefix}_imgsize({args.image_size})_epochs({args.num_epochs})_bs({args.batch_size})_accum({args.accum_iter})" \

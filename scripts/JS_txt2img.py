@@ -9,6 +9,7 @@ from tqdm import tqdm, trange
 from imwatermark import WatermarkEncoder
 from itertools import islice
 from einops import rearrange
+import torchvision.transforms as tvt
 from torchvision.utils import make_grid
 import time
 from pytorch_lightning import seed_everything
@@ -100,7 +101,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--prompt", type=str, nargs="?", default="a painting of a virus monster playing guitar", help="the prompt to render")
-    parser.add_argument("--outdir", type=str, nargs="?", help="dir to write results to", default="outputs/txt2img-samples")
+    parser.add_argument("--outdir", type=str, nargs="?", help="dir to write results to", default="./outputs/txt2img-samples")
     parser.add_argument("--skip_grid", action='store_true', help="do not save a grid, only individual samples. Helpful when evaluating lots of samples")
     parser.add_argument("--skip_save", action='store_true', help="do not save individual samples. For speed measurements.")
     parser.add_argument("--ddim_steps", type=int, default=50, help="number of ddim sampling steps")
@@ -118,27 +119,18 @@ def main():
     parser.add_argument("--n_rows", type=int, default=0, help="rows in the grid (default: n_samples)")
     parser.add_argument("--scale", type=float, default=7.5, help="unconditional guidance scale: eps = eps(x, empty) + scale * (eps(x, cond) - eps(x, empty))")
     parser.add_argument("--from-file", type=str, help="if specified, load prompts from this file")
-    parser.add_argument("--config", type=str, default='../configs/stable-diffusion/v1-inference.yaml', help="path to config which constructs model")
-    parser.add_argument("--ckpt", type=str, default='../checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help="path to checkpoint of model")
+    parser.add_argument("--config", type=str, default='./configs/stable-diffusion/v1-inference.yaml', help="path to config which constructs model")
+    parser.add_argument("--ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help="path to checkpoint of model")
     parser.add_argument("--seed", type=int, default=42, help="the seed (for reproducible sampling)")
     parser.add_argument("--precision", type=str, help="evaluate at this precision", choices=["full", "autocast"], default="autocast")
     parser.add_argument("--use_wm", default=False, type=lambda x: bool(strtobool(x)), help="Use watermarking")
     opt = parser.parse_args()
 
-    #################
-    # JStyborski Edit
-    opt.n_iter = 16
-    opt.H = 512
-    opt.W = 512
-    opt.n_samples = 1
-    opt.prompt = 'A painting of a bird by RNG_Orig.'
-    #################
-
     if opt.laion400m:
         print("Falling back to LAION 400M model...")
-        opt.config = "configs/latent-diffusion/txt2img-1p4B-eval.yaml"
-        opt.ckpt = "models/ldm/text2img-large/model.ckpt"
-        opt.outdir = "outputs/txt2img-samples-laion400m"
+        opt.config = "./configs/latent-diffusion/txt2img-1p4B-eval.yaml"
+        opt.ckpt = "./models/ldm/text2img-large/model.ckpt"
+        opt.outdir = "./outputs/txt2img-samples-laion400m"
 
     seed_everything(opt.seed)
 
@@ -234,22 +226,21 @@ def main():
 
                         x_samples_ddim = model.decode_first_stage(samples_ddim)
                         x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
-                        x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
-
-                        x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
-
-                        x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
+                        # x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
+                        # x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                        # x_checked_image_torch = torch.from_numpy(x_samples_ddim).permute(0, 3, 1, 2)
 
                         if not opt.skip_save:
-                            for x_sample in x_checked_image_torch:
-                                x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                                img = Image.fromarray(x_sample.astype(np.uint8))
+                            for x_sample in x_samples_ddim:
+                                img = tvt.functional.to_pil_image(x_sample, mode='RGB')
+                                #x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                                #img = Image.fromarray(x_sample.astype(np.uint8))
                                 img = put_watermark(img, wm_encoder)
                                 img.save(os.path.join(sample_path, f"{base_count:05}.png"))
                                 base_count += 1
 
                         if not opt.skip_grid:
-                            all_samples.append(x_checked_image_torch)
+                            all_samples.append(x_samples_ddim)
 
                 if not opt.skip_grid:
                     # additionally, save as grid

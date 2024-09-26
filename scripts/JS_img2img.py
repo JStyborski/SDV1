@@ -78,41 +78,12 @@ def main():
     parser.add_argument("--scale", type=float, default=5.0, help="unconditional guidance scale: eps = eps(x, empty) + scale * (eps(x, cond) - eps(x, empty))")
     parser.add_argument("--strength", type=float, default=0.75, help="strength for noising/unnoising. 1.0 corresponds to full destruction of information in init image")
     parser.add_argument("--from-file", type=str, help="if specified, load prompts from this file")
-    parser.add_argument("--config", type=str, default="configs/stable-diffusion/v1-inference.yaml", help="path to config which constructs model")
-    parser.add_argument("--ckpt", type=str, default="models/ldm/stable-diffusion-v1/model.ckpt", help="path to checkpoint of model")
+    parser.add_argument("--config", type=str, default='./configs/stable-diffusion/v1-inference.yaml', help="path to config which constructs model")
+    parser.add_argument("--ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help="path to checkpoint of model")
     parser.add_argument("--seed", type=int, default=42, help="the seed (for reproducible sampling)")
     parser.add_argument("--precision", type=str, help="evaluate at this precision", choices=["full", "autocast"], default="autocast")
 
     opt = parser.parse_args()
-
-    ###################
-    # JStyborski Edit #
-    ###################
-    opt.prompt = ''
-    #opt.img_dir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    opt.img_dir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Misted_Imgs\MIST_Target_Mode-0_16px'
-    # opt.init_img = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Orig_Imgs\54550.png'
-    opt.outdir = opt.img_dir
-    opt.skip_save = False
-    opt.skip_grid = True
-    opt.ddim_steps = 100
-    opt.ddim_eta = 0.0  # 0.0 = deterministic decoding
-    opt.scale = 1.0  # Classifier-free guidance scale
-    opt.strength = 1.0  # Denoising strength
-    opt.f = 8           # Downsampling factor, but unused
-    opt.n_samples = 1
-    opt.n_iter = 1
-    opt.config = r'C:\Users\jeremy\Python_Projects\SDV1\configs\stable-diffusion\v1-inference.yaml'
-    opt.ckpt = r'C:\Users\jeremy\Python_Projects\SDV1\checkpoints\sdv15_finetuned_vae\v1-5-pruned-emaonly_AWA0887_LR2en3_Accum1_EMA0p9.ckpt'
-    opt.deterministicVAE = True   # Use deterministic VAE (0 std for sampling)
-    opt.deterministicDiff = None  # Use deterministic diffusion (set as None for no diffusion, just VAE)
-    opt.useOrigTimesteps = False  # Use original DDIM sampler timesteps, if false, uses my custom timesteps
-    opt.save_latents = True       # Save VAE and diffusion latents
-    opt.save_streamlines = False   # Save the entire encode/decode streamline for diffusion (only used if opt.deterministicDiff is True)
-    ckptSuffix = '_AWA0887_LR2en3_Accum1_EMA0p9'
-    outFolderName = 'Mean_Reconstr_Imgs' + ckptSuffix
-    outFileSuffix = '_mean_recon.png'
-    ###################
 
     seed_everything(opt.seed)
 

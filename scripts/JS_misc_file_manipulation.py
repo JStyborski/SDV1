@@ -8,6 +8,9 @@ import torch
 
 def run_main():
 
+    srcDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
+    mstDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Misted_Imgs\test'
+
     # CLIP Searcher
     # srcImg = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Generated_Imgs\00000-4004092763.png'
     # searchDir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Generated_Imgs'
@@ -26,9 +29,8 @@ def run_main():
     # jpg_to_png(imgDir)
 
     # File Renamer
-    imgsDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    fileCaptDict = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions\file_caption_dict.npy'
-    file_caption_renamer(imgsDir, fileCaptDict, file2Capt=True)
+    # fileCaptDict = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions\file_caption_dict.npy'
+    # file_caption_renamer(imgsDir, fileCaptDict, file2Capt=True)
 
     # textDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions'
     # create_file_capt_dict(imgsDir, textDir)
