@@ -90,11 +90,10 @@ class FinetuneVAE(pl.LightningModule):
             trg_img = trg_img.half()
 
         # Encode, sample, decode
+        trg_posterior = self.model.encode(trg_img)
         posterior = self.model.encode(inp_img)
         z = posterior.sample()
         pred = self.model.decode(z)
-
-        trg_posterior = self.model.encode(trg_img)
 
         # Calculate latent prior KLDiv loss, LPIPS loss, and reconstruction loss
         kl_loss = posterior.kl().mean() if self.kl_loss_wt > 0. else 0.
@@ -129,10 +128,10 @@ class FinetuneVAE(pl.LightningModule):
         if self.precision == 16:
             inp_img = inp_img.half()
             trg_img = trg_img.half()
+        trg_posterior = self.model.encode(trg_img)
         posterior = self.model.encode(inp_img)
         z = posterior.sample()
         pred = self.model.decode(z)
-        trg_posterior = self.model.encode(trg_img)
         kl_loss = posterior.kl().mean() if self.kl_loss_wt > 0. else 0.
         lpips_loss = self.lpips_loss_fn(pred, trg_img).mean() if self.lpips_loss_wt > 0. else 0.
         lat_align_loss = torch.nn.functional.mse_loss(posterior.mean, trg_posterior.mean) if self.lat_align_wt > 0. else 0.
@@ -199,8 +198,8 @@ def get_vae_weights(input_path):
 
 def arg_inputs():
     parser = ArgumentParser()
-    parser.add_argument('--vae_config', type=str, default='../configs/autoencoder/v1-vae.yaml', help='Path to config which constructs model')
-    parser.add_argument('--sd_ckpt', type=str, default='../checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help='Path to checkpoint of model')
+    parser.add_argument('--vae_config', type=str, default='./configs/autoencoder/v1-vae.yaml', help='Path to config which constructs model')
+    parser.add_argument('--sd_ckpt', type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help='Path to checkpoint of model')
     parser.add_argument('--freeze_enc', default=False, type=lambda x: bool(strtobool(x)), help='Boolean to freeze encoder during training.')
     parser.add_argument('--freeze_dec', default=False, type=lambda x: bool(strtobool(x)), help='Boolean to freeze decoder during training.')
     parser.add_argument('--train_root', type=str, default=None, help='The directory that contains training images')
@@ -226,20 +225,6 @@ if __name__ == '__main__':
 
     args = arg_inputs()
 
-    ##################
-    # JStyborski Edits
-    args.train_root = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
-    args.num_epochs = 200
-    args.save_interval = 1
-    args.batch_size = 2
-    args.lr = 0.002
-    args.log_prefix = 'test'
-    args.kl_loss_wt = 1.
-    args.lpips_loss_wt = 1.
-    args.lat_align_wt = 1.
-    args.freeze_enc = True
-    ##################
-
     # Set output filename and directory
     file_names = f"{args.log_prefix}_imgsize({args.img_size})_epochs({args.num_epochs})_bs({args.batch_size})_accum({args.accum_iter})" \
                  f"_kl({args.kl_loss_wt})_lpips({args.lpips_loss_wt})_lat-align({args.lat_align_wt})_lr({args.lr})_ema({args.ema_decay})" \
@@ -255,6 +240,7 @@ if __name__ == '__main__':
         assert len(args.devices) == 1
         args.strategy = 'auto'  # Overwrite name to avoid device bug (https://github.com/Lightning-AI/pytorch-lightning/issues/18902)
     args.batch_size = args.batch_size // len(args.devices)  # Adjust total batch size to be per-device (which is what PL expects)
+    args.lr = args.lr * args.batch_size * args.accum_iter * len(args.devices)
 
     # Load config and get weights (not loaded yet)
     config = OmegaConf.load(args.vae_config)
