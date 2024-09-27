@@ -8,8 +8,11 @@ import torch
 
 def run_main():
 
-    srcDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    mstDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Misted_Imgs\test'
+    # srcDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
+    # mstDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Misted_Imgs\test'
+
+    srcDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
+    jpg_to_png(srcDir)
 
     # CLIP Searcher
     # srcImg = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Generated_Imgs\00000-4004092763.png'

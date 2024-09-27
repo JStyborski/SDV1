@@ -1,19 +1,22 @@
 # Copied this script from https://github.com/Leminhbinh0209/FinetuneVAE-SD and then made extensive modifications
 
+from distutils.util import strtobool
+from JS_text_inversion import freeze_params
+from ldm.util import instantiate_from_config
+from ldm.modules.ema import LitEma
+import numpy as np
 import os
 from omegaconf import OmegaConf
-import numpy as np
+from PIL import Image
+from piq import LPIPS
 import torch
 import torch.optim as optim
 import pytorch_lightning as pl
 from torchvision import transforms
 from torch.utils.data import Dataset
 from pytorch_lightning import Trainer
-from PIL import Image
 from argparse import ArgumentParser
-from piq import LPIPS
-from ldm.util import   instantiate_from_config
-from ldm.modules.ema import LitEma
+
 
 torch.cuda.empty_cache()
 
@@ -42,16 +45,21 @@ class GaussianNoise(object):
         return x
 
 class FinetuneVAE(pl.LightningModule):
-    def __init__(self, vae_config=None, vae_weights=None, kl_loss_weight=0.1, lpips_loss_weight=0.1, optim='sgd', lr=1e-4, momentum=0.9,
-                 weight_decay=5e-4, ema_decay=0.999, precision=32, log_dir=None):
+    def __init__(self, vae_config=None, vae_weights=None, freeze_enc=False, freeze_dec=False, kl_loss_wt=0.1, lpips_loss_wt=0.1, lat_align_wt=0.,
+                 optim='sgd', lr=1e-4, momentum=0.9, weight_decay=5e-4, ema_decay=0.999, precision=32, log_dir=None):
         super().__init__()
         self.model = instantiate_from_config(vae_config)
         self.model.load_state_dict(vae_weights, strict=True)
         self.model.train()
-        self.kl_loss_weight = kl_loss_weight
-        self.lpips_loss_weight = lpips_loss_weight
+        if freeze_enc:
+            freeze_params(self.model.encoder.parameters())
+        if freeze_dec:
+            freeze_params(self.model.decoder.parameters())
+        self.kl_loss_wt = kl_loss_wt
+        self.lpips_loss_wt = lpips_loss_wt
         self.lpips_loss_fn = LPIPS(mean=[0., 0., 0.], std=[1., 1., 1.], reduction='none')  # LPIPS loss with VGG16 for images that have already been normalized
         self.lpips_loss_fn.eval()
+        self.lat_align_wt = lat_align_wt
         self.optim = optim
         self.lr = lr
         self.momentum = momentum
@@ -86,19 +94,24 @@ class FinetuneVAE(pl.LightningModule):
         z = posterior.sample()
         pred = self.model.decode(z)
 
-        # Calculate latent prior KLDiv loss, LPIPS loss, and reconstruction loss
-        kl_loss = posterior.kl().mean()
-        lpips_loss = self.lpips_loss_fn(pred, trg_img).mean()
-        rec_loss = torch.abs(trg_img.contiguous() - pred.contiguous())
-        if self.current_epoch < self.trainer.max_epochs // 3 * 2:
-            rec_loss = rec_loss.mean() * rec_loss.size(1)  # L1 loss at epoch < 2/3 max_epochs
-            loss = self.kl_loss_weight * kl_loss + self.lpips_loss_weight * lpips_loss + rec_loss
-        else:
-            rec_loss = rec_loss.pow(2).mean() * rec_loss.size(1)  # L2 loss at epoch >= 2/3 max_epochs
-            loss = self.kl_loss_weight * kl_loss + 0.1 * self.lpips_loss_weight * lpips_loss + rec_loss  # 0.1x LPIPS at epoch >= 2/3 max_epochs
+        trg_posterior = self.model.encode(trg_img)
 
+        # Calculate latent prior KLDiv loss, LPIPS loss, and reconstruction loss
+        kl_loss = posterior.kl().mean() if self.kl_loss_wt > 0. else 0.
+        lpips_loss = self.lpips_loss_fn(pred, trg_img).mean() if self.lpips_loss_wt > 0. else 0.
+        lat_align_loss = torch.nn.functional.mse_loss(posterior.mean, trg_posterior.mean) if self.lat_align_wt > 0. else 0.
+        rec_loss = torch.nn.functional.mse_loss(pred.contiguous(), trg_img.contiguous()) * pred.size(1)
+        loss = self.kl_loss_wt * kl_loss + self.lpips_loss_wt * lpips_loss + self.lat_align_wt * lat_align_loss + rec_loss
+        # rec_loss = torch.abs(trg_img.contiguous() - pred.contiguous())
+        # if self.current_epoch < self.trainer.max_epochs // 3 * 2:
+        #     rec_loss = rec_loss.mean() * rec_loss.size(1)  # L1 loss at epoch < 2/3 max_epochs
+        #     loss = self.kl_loss_wt * kl_loss + self.lpips_loss_wt * lpips_loss + rec_loss
+        # else:
+        #     rec_loss = rec_loss.pow(2).mean() * rec_loss.size(1)  # L2 loss at epoch >= 2/3 max_epochs
+        #     loss = self.kl_loss_wt * kl_loss + 0.1 * self.lpips_loss_wt * lpips_loss + rec_loss  # 0.1x LPIPS at epoch >= 2/3 max_epochs
         self.log('kl_loss', kl_loss, on_step=True, on_epoch=False, prog_bar=True, logger=False)
         self.log('lpips_loss', lpips_loss, on_step=True, on_epoch=False, prog_bar=True, logger=False)
+        self.log('lat_align_loss', lat_align_loss, on_step=True, on_epoch=False, prog_bar=True, logger=False)
         self.log('rec_loss', rec_loss, on_step=True, on_epoch=False, prog_bar=True, logger=False)
         return loss
 
@@ -117,30 +130,36 @@ class FinetuneVAE(pl.LightningModule):
             inp_img = inp_img.half()
             trg_img = trg_img.half()
         posterior = self.model.encode(inp_img)
-        z = posterior.mode()
+        z = posterior.sample()
         pred = self.model.decode(z)
-        kl_loss = posterior.kl().mean()
-        lpips_loss = self.lpips_loss_fn(pred, trg_img).mean()
-        rec_loss = torch.abs(trg_img.contiguous() - pred.contiguous())
-        if self.current_epoch < self.trainer.max_epochs // 3 * 2:
-            rec_loss = rec_loss.mean() * rec_loss.size(1)  # L1 loss at epoch < 2/3 max_epochs
-            loss = self.kl_loss_weight * kl_loss + self.lpips_loss_weight * lpips_loss + rec_loss
-        else:
-            rec_loss = rec_loss.pow(2).mean() * rec_loss.size(1)  # L2 loss at epoch >= 2/3 max_epochs
-            loss = self.kl_loss_weight * kl_loss + 0.1 * self.lpips_loss_weight * lpips_loss + rec_loss  # 0.1x LPIPS at epoch >= 2/3 max_epochs
+        trg_posterior = self.model.encode(trg_img)
+        kl_loss = posterior.kl().mean() if self.kl_loss_wt > 0. else 0.
+        lpips_loss = self.lpips_loss_fn(pred, trg_img).mean() if self.lpips_loss_wt > 0. else 0.
+        lat_align_loss = torch.nn.functional.mse_loss(posterior.mean, trg_posterior.mean) if self.lat_align_wt > 0. else 0.
+        rec_loss = torch.nn.functional.mse_loss(pred.contiguous, trg_img.contiguous()) * pred.size(1)
+        loss = self.kl_loss_wt * kl_loss + self.lpips_loss_wt * lpips_loss + self.lat_align_wt * lat_align_loss + rec_loss
+        # rec_loss = torch.abs(trg_img.contiguous() - pred.contiguous())
+        # if self.current_epoch < self.trainer.max_epochs // 3 * 2:
+        #     rec_loss = rec_loss.mean() * rec_loss.size(1)  # L1 loss at epoch < 2/3 max_epochs
+        #     loss = self.kl_loss_wt * kl_loss + self.lpips_loss_wt * lpips_loss + rec_loss
+        # else:
+        #     rec_loss = rec_loss.pow(2).mean() * rec_loss.size(1)  # L2 loss at epoch >= 2/3 max_epochs
+        #     loss = self.kl_loss_wt * kl_loss + 0.1 * self.lpips_loss_wt * lpips_loss + rec_loss  # 0.1x LPIPS at epoch >= 2/3 max_epochs
         self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.log_images(trg_img, pred)
-        return {"kl_loss": kl_loss, "lpips_loss": lpips_loss, "rec_loss": rec_loss, 'val_loss': loss}
+        return {'kl_loss': kl_loss, 'lpips_loss': lpips_loss, 'lat_align_loss': lat_align_loss, 'rec_loss': rec_loss, 'val_loss': loss}
 
     def on_validation_end(self, validation_step_outputs):
         self.log_one_batch = False
         # Gather and log the validation_step outputs
         kl_loss = torch.stack([x['kl_loss'] for x in validation_step_outputs]).mean()
         lpips_loss = torch.stack([x['lpips_loss'] for x in validation_step_outputs]).mean()
+        lat_align_loss = torch.stack(x['lat_align_loss'] for x in validation_step_outputs).mean()
         rec_loss = torch.stack([x['rec_loss'] for x in validation_step_outputs]).mean()
         val_loss = torch.stack([x['val_loss'] for x in validation_step_outputs]).mean()
         self.log('val_kl_loss', kl_loss, on_step=False, on_epoch=True, prog_bar=False, logger=True)
         self.log('val_lpips_loss', lpips_loss, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        self.log('val_lat_align_loss', lat_align_loss, on_step=False, on_epoch=True, prog_bar=False, logger=True)
         self.log('val_rec_loss', rec_loss, on_step=False, on_epoch=True, prog_bar=False, logger=True)
         self.log('val_loss', val_loss, on_step=False, on_epoch=True, prog_bar=False, logger=True)
 
@@ -180,8 +199,10 @@ def get_vae_weights(input_path):
 
 def arg_inputs():
     parser = ArgumentParser()
-    parser.add_argument("--vae_config", type=str, default="./configs/autoencoder/v1-vae.yaml", help='Path to config which constructs model')
-    parser.add_argument("--sd_ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help='Path to checkpoint of model')
+    parser.add_argument('--vae_config', type=str, default='../configs/autoencoder/v1-vae.yaml', help='Path to config which constructs model')
+    parser.add_argument('--sd_ckpt', type=str, default='../checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help='Path to checkpoint of model')
+    parser.add_argument('--freeze_enc', default=False, type=lambda x: bool(strtobool(x)), help='Boolean to freeze encoder during training.')
+    parser.add_argument('--freeze_dec', default=False, type=lambda x: bool(strtobool(x)), help='Boolean to freeze decoder during training.')
     parser.add_argument('--train_root', type=str, default=None, help='The directory that contains training images')
     parser.add_argument('--val_root', type=str, default=None, help='The directory that contains validation images - set as None for no validation')
     parser.add_argument('--output_dir', type=str, default='./vae_finetune', help='Directory to save outputs')
@@ -193,8 +214,9 @@ def arg_inputs():
     parser.add_argument('--num_epochs', type=int, default=10, help='Number of finetuning epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='Total batch size across GPUs per iteration (before accumulation)')
     parser.add_argument('--accum_iter', type=int, default=1, help='Number of batches to accumulate gradients before backpropagation')
-    parser.add_argument('--kl_loss_weight', type=float, default=0.)
-    parser.add_argument('--lpips_loss_weight', type=float, default=1.)
+    parser.add_argument('--kl_loss_wt', default=0., type=float, help='Weight on KL divergence loss function. Recommend 0.')
+    parser.add_argument('--lpips_loss_wt', default=0., type=float, help='Weight on LPIPS loss function. Recommend ~0.1.')
+    parser.add_argument('--lat_align_wt', default=0., type=float, help='Weight on inp-trg encoding alignment weight. Recommend ~0.01.')
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--ema_decay', type=float, default=0.99, help="Use use_ema")
     args = parser.parse_args()
@@ -204,9 +226,24 @@ if __name__ == '__main__':
 
     args = arg_inputs()
 
+    ##################
+    # JStyborski Edits
+    args.train_root = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
+    args.num_epochs = 200
+    args.save_interval = 1
+    args.batch_size = 2
+    args.lr = 0.002
+    args.log_prefix = 'test'
+    args.kl_loss_wt = 1.
+    args.lpips_loss_wt = 1.
+    args.lat_align_wt = 1.
+    args.freeze_enc = True
+    ##################
+
     # Set output filename and directory
     file_names = f"{args.log_prefix}_imgsize({args.img_size})_epochs({args.num_epochs})_bs({args.batch_size})_accum({args.accum_iter})" \
-                 f"_kl({args.kl_loss_weight})_lpips({args.lpips_loss_weight})_lr({args.lr})_ema({args.ema_decay})"
+                 f"_kl({args.kl_loss_wt})_lpips({args.lpips_loss_wt})_lat-align({args.lat_align_wt})_lr({args.lr})_ema({args.ema_decay})" \
+                 f"_freeze-enc({args.freeze_enc})_freeze-dec({args.freeze_dec})"
     log_dir = f"{args.output_dir}/{file_names}"
     os.makedirs(log_dir, exist_ok=True)
 
@@ -247,8 +284,9 @@ if __name__ == '__main__':
         val_dl = None
 
     # Instantiate PL module
-    vae_plmod = FinetuneVAE(vae_config=vae_config, vae_weights=vae_weights, kl_loss_weight=args.kl_loss_weight,
-                            lpips_loss_weight=args.lpips_loss_weight, lr=args.lr, ema_decay=args.ema_decay, precision=args.precision, log_dir=log_dir)
+    vae_plmod = FinetuneVAE(vae_config=vae_config, vae_weights=vae_weights, freeze_enc=args.freeze_enc, freeze_dec=args.freeze_dec,
+                            kl_loss_wt=args.kl_loss_wt, lpips_loss_wt=args.lpips_loss_wt, lat_align_wt=args.lat_align_wt,
+                            lr=args.lr, ema_decay=args.ema_decay, precision=args.precision, log_dir=log_dir)
     vae_plmod = vae_plmod.to(device)
 
     # Instantiate PL Trainer
