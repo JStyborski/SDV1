@@ -148,7 +148,7 @@ def training_function(args, train_dataset, model):
 def arg_inputs():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sd_config', default='./configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model')
-    parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', type=str, help='Path to checkpoint of model')
+    parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned-emaonly.ckpt', type=str, help='Path to checkpoint of model')
     parser.add_argument('--src_img_dir', default=None, type=str, help='Path of the directory of images to be processed.')
     parser.add_argument('--new_token', default='RRRRR', type=str, help='Name of token embedding to learn.')
     parser.add_argument('--init_token', default='*', type=str, help='String for to initial embedding for new token. Set as None for zeros init. Set as empty string for N(0,1) init.')

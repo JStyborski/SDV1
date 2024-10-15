@@ -24,16 +24,41 @@ conda activate sdv1
 
 Please refer to the original repo for information on models. 
 
-I have not altered the model configuration. I have only modified a few original files to fix a bugs.
+I have not altered the model configuration. I have only modified a few original files to fix bugs.
 
 ### Weights
 
 Please refer to the original repo for information on weights.
 
-I use checkpoints for SD version 1.5 which can be downloaded from various repos on the web.
+I use checkpoints for SD v1.5 which can be downloaded from various repos on the web.
 
-### Usage
+### Usage Examples
 
-Still have to fill this out with example commands.
+Adversarial Attack:
+```
+CUDA_VISIBLE_DEVICES=0 python scripts/JS_mist.py --src_img_dir ../Datasets/MyFaveCat --tgt_img_path ../Datasets/Poison_Targets/target.png
+```
+
+Textual Inversion:
+```
+CUDA_VISIBLE_DEVICES=0 python scripts/JS_text_inversion.py --src_img_dir ../Datasets/MyFaveCat --new_token MyFaveCatILoveHim --concept_type object
+```
+
+Text to Image:
+```
+CUDA_VISIBLE_DEVICES=0 python scripts/JS_txt2img.py --prompt A painting of MyFaveCatILoveHim.
+```
+
+Finetune VAE:
+```
+CUDA_VISIBLE_DEVICES=0 python scripts/JS_vae_finetune.py --src_img_dir ../Datasets/WikiArt_Imgs --log_prefix AllWikiArt
+```
+
+Image to Image:
+```
+CUDA_VISIBLE_DEVICES=0 python scripts/JS_img2img.py --src_img_dir ../Datasets/MyFaveCat --prompt A painting of my favorite cat.
+```
+
+
 
 

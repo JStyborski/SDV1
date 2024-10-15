@@ -62,7 +62,7 @@ class identity_loss(torch.nn.Identity):
 def arg_inputs():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sd_config', default='./configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model')
-    parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', type=str, help='Path to checkpoint of model')
+    parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned-emaonly.ckpt', type=str, help='Path to checkpoint of model')
     parser.add_argument('--src_img_dir', default=None, type=str, help='Path of the directory of images to be processed.')
     parser.add_argument('--img_size', default=512, type=int, help='Image size to input to LDM (after resize).')
     parser.add_argument('--concept_type', default='object', choices=['object', 'style'], type=str, help='Is the concept an object or a style?')

@@ -98,8 +98,8 @@ def check_safety(x_image):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--prompt", type=str, nargs="?", default="a painting of a virus monster playing guitar", help="the prompt to render")
-    parser.add_argument("--outdir", type=str, nargs="?", help="dir to write results to", default="./outputs/txt2img-samples")
+    parser.add_argument("--prompt", default="a painting of a virus monster playing guitar", type=str, nargs="?", help="the prompt to render")
+    parser.add_argument("--outdir", default="./outputs/txt2img-samples", type=str, nargs="?", help="dir to write results to")
     parser.add_argument("--skip_grid", action='store_true', help="do not save a grid, only individual samples. Helpful when evaluating lots of samples")
     parser.add_argument("--skip_save", action='store_true', help="do not save individual samples. For speed measurements.")
     parser.add_argument("--ddim_steps", type=int, default=50, help="number of ddim sampling steps")
@@ -118,7 +118,7 @@ def main():
     parser.add_argument("--scale", type=float, default=7.5, help="unconditional guidance scale: eps = eps(x, empty) + scale * (eps(x, cond) - eps(x, empty))")
     parser.add_argument("--from-file", type=str, help="if specified, load prompts from this file")
     parser.add_argument("--config", type=str, default='./configs/stable-diffusion/v1-inference.yaml', help="path to config which constructs model")
-    parser.add_argument("--ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned.ckpt', help="path to checkpoint of model")
+    parser.add_argument("--ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned-emaonly.ckpt', help="path to checkpoint of model")
     parser.add_argument("--seed", type=int, default=42, help="the seed (for reproducible sampling)")
     parser.add_argument("--precision", type=str, help="evaluate at this precision", choices=["full", "autocast"], default="autocast")
     parser.add_argument("--use_wm", default=False, type=lambda x: bool(strtobool(x)), help="Use watermarking")
