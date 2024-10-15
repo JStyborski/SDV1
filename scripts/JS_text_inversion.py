@@ -3,18 +3,18 @@
 import accelerate
 import argparse
 from distutils.util import strtobool
+from JS_img2img import load_model_from_config
 import math
+from omegaconf import OmegaConf
 import os
 from PIL import Image
+from pytorch_lightning import seed_everything
 import random
 import torch
 import torch.utils.checkpoint
 from torch.utils.data import Dataset
 import torchvision.transforms as tvt
 from tqdm.auto import tqdm
-
-from omegaconf import OmegaConf
-from img2img import load_model_from_config
 
 class TextualInversionDataset(Dataset):
     def __init__(self, src_img_dir, img_repeats=100, img_size=512, center_crop=False, flip_pct=0.5, new_token="*", concept_type='object', use_filewords=True):
@@ -91,7 +91,7 @@ def training_function(args, train_dataset, model):
 
     # Only show the progress bar once on each machine.
     progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
-    progress_bar.set_description("Steps")
+    progress_bar.set_description('Steps')
     global_step = 0
 
     for epoch in range(num_train_epochs):
@@ -140,7 +140,7 @@ def training_function(args, train_dataset, model):
 
     # Save the newly trained embeddings
     if accelerator.is_main_process:
-        learned_embeds = accelerator.unwrap_model(accelerator.unwrap_model(text_encoder)).get_input_embeddings().weight[args.new_token_id]
+        learned_embeds = accelerator.unwrap_model(accelerator.unwrap_model(model.cond_stage_model.transformer)).get_input_embeddings().weight[args.new_token_id]
         learned_embeds_dict = {args.new_token: learned_embeds.detach().cpu()}
         os.makedirs(r'./text_inv_embeddings', exist_ok=True)
         torch.save(learned_embeds_dict, os.path.join(r'./text_inv_embeddings', args.new_token + '.pt'))
@@ -172,7 +172,7 @@ if __name__ == '__main__':
 
     args = arg_inputs()
     accelerate.utils.set_seed(args.rand_seed)
-    # Other seeds?
+    seed_everything(args.rand_seed)
 
     # Rescale parameters by the number of available processes (GPUs)
     args.n_procs = torch.cuda.device_count()

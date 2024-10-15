@@ -11,7 +11,6 @@ from itertools import islice
 from einops import rearrange
 import torchvision.transforms as tvt
 from torchvision.utils import make_grid
-import time
 from pytorch_lightning import seed_everything
 from torch import autocast
 from contextlib import contextmanager, nullcontext
@@ -42,25 +41,25 @@ def numpy_to_pil(images):
     """
     if images.ndim == 3:
         images = images[None, ...]
-    images = (images * 255).round().astype("uint8")
+    images = (images * 255).round().astype('uint8')
     pil_images = [Image.fromarray(image) for image in images]
 
     return pil_images
 
 
 def load_model_from_config(config, ckpt, verbose=False):
-    print(f"Loading model from {ckpt}")
-    pl_sd = torch.load(ckpt, map_location="cpu")
-    if "global_step" in pl_sd:
+    print(f'Loading model from {ckpt}')
+    pl_sd = torch.load(ckpt, map_location='cpu')
+    if 'global_step' in pl_sd:
         print(f"Global Step: {pl_sd['global_step']}")
-    sd = pl_sd["state_dict"]
+    sd = pl_sd['state_dict']
     model = instantiate_from_config(config.model)
     m, u = model.load_state_dict(sd, strict=False)
     if len(m) > 0 and verbose:
-        print("missing keys:")
+        print('missing keys:')
         print(m)
     if len(u) > 0 and verbose:
-        print("unexpected keys:")
+        print('unexpected keys:')
         print(u)
 
     model.cuda()
@@ -79,7 +78,7 @@ def put_watermark(img, wm_encoder=None):
 def load_replacement(x):
     try:
         hwc = x.shape
-        y = Image.open("assets/rick.jpeg").convert("RGB").resize((hwc[1], hwc[0]))
+        y = Image.open('assets/rick.jpeg').convert('RGB').resize((hwc[1], hwc[0]))
         y = (np.array(y)/255.0).astype(x.dtype)
         assert y.shape == x.shape
         return y
@@ -99,7 +98,6 @@ def check_safety(x_image):
 
 def main():
     parser = argparse.ArgumentParser()
-
     parser.add_argument("--prompt", type=str, nargs="?", default="a painting of a virus monster playing guitar", help="the prompt to render")
     parser.add_argument("--outdir", type=str, nargs="?", help="dir to write results to", default="./outputs/txt2img-samples")
     parser.add_argument("--skip_grid", action='store_true', help="do not save a grid, only individual samples. Helpful when evaluating lots of samples")
@@ -203,7 +201,6 @@ def main():
     with torch.no_grad():
         with precision_scope("cuda"):
             with model.ema_scope():
-                tic = time.time()
                 all_samples = list()
                 for n in trange(opt.n_iter, desc="Sampling"):
                     for prompts in tqdm(data, desc="data"):
@@ -233,8 +230,6 @@ def main():
                         if not opt.skip_save:
                             for x_sample in x_samples_ddim:
                                 img = tvt.functional.to_pil_image(x_sample, mode='RGB')
-                                #x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                                #img = Image.fromarray(x_sample.astype(np.uint8))
                                 img = put_watermark(img, wm_encoder)
                                 img.save(os.path.join(sample_path, f"{base_count:05}.png"))
                                 base_count += 1
@@ -254,8 +249,6 @@ def main():
                     img = put_watermark(img, wm_encoder)
                     img.save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
                     grid_count += 1
-
-                toc = time.time()
 
     print(f"Your samples are ready and waiting for you here: \n{outpath} \n"
           f" \nEnjoy.")

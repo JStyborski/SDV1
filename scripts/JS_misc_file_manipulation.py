@@ -12,7 +12,7 @@ def run_main():
     # mstDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Misted_Imgs\test'
 
     srcDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
-    jpg_to_png(srcDir)
+    #jpg_to_png(srcDir)
 
     # CLIP Searcher
     # srcImg = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Generated_Imgs\00000-4004092763.png'
@@ -34,6 +34,10 @@ def run_main():
     # File Renamer
     # fileCaptDict = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions\file_caption_dict.npy'
     # file_caption_renamer(imgsDir, fileCaptDict, file2Capt=True)
+
+    # Image Resizer
+    # outDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs\resize512'
+    # image_resizer(srcDir, outDir, 512)
 
     # textDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions'
     # create_file_capt_dict(imgsDir, textDir)
@@ -93,6 +97,28 @@ def target_image_creator(imgFile, imgSize=256):
     #imgArr = 255 * np.ones((imgSize, imgSize, 3), dtype=np.uint8)
     imgOut = Image.fromarray(imgArr)
     imgOut.save(imgFile)
+
+def image_resizer(imgDir, outDir, imgSize=256, resizeType=Image.LANCZOS):
+    """
+    :param imgDir: [str] - Directory with images to resize
+    :param outDir: [str] - Directory to save resized images
+    :param imgSize: [int] - Final image size
+    :param resizeType: [PIL.Image.Resampling] - PIL Resampling type
+    :return: None, saves out files
+    """
+
+    # Create output directory if it doesn't exist
+    os.makedirs(outDir, exist_ok=True)
+
+    for imgFile in os.listdir(imgDir):
+
+        # Only process .png files
+        fileName, fileExt = os.path.splitext(imgFile)
+        if not os.path.isfile(os.path.join(imgDir, imgFile)) or fileExt != '.png':
+            continue
+
+        img = Image.open(os.path.join(imgDir, imgFile)).resize((imgSize, imgSize), resample=resizeType)
+        img.save(os.path.join(outDir, imgFile))
 
 def copy_files(srcDir, trgDir, fileNameList=None):
     """
