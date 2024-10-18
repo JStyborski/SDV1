@@ -25,7 +25,7 @@ from transformers import AutoFeatureExtractor
 
 
 # load safety model
-safety_model_id = "CompVis/stable-diffusion-safety-checker"
+safety_model_id = 'CompVis/stable-diffusion-safety-checker'
 safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
 safety_checker = StableDiffusionSafetyChecker.from_pretrained(safety_model_id)
 
@@ -87,7 +87,7 @@ def load_replacement(x):
 
 
 def check_safety(x_image):
-    safety_checker_input = safety_feature_extractor(numpy_to_pil(x_image), return_tensors="pt")
+    safety_checker_input = safety_feature_extractor(numpy_to_pil(x_image), return_tensors='pt')
     x_checked_image, has_nsfw_concept = safety_checker(images=x_image, clip_input=safety_checker_input.pixel_values)
     assert x_checked_image.shape[0] == len(has_nsfw_concept)
     for i in range(len(has_nsfw_concept)):
@@ -98,50 +98,51 @@ def check_safety(x_image):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--prompt", default="a painting of a virus monster playing guitar", type=str, nargs="?", help="the prompt to render")
-    parser.add_argument("--outdir", default="./outputs/txt2img-samples", type=str, nargs="?", help="dir to write results to")
-    parser.add_argument("--skip_grid", action='store_true', help="do not save a grid, only individual samples. Helpful when evaluating lots of samples")
-    parser.add_argument("--skip_save", action='store_true', help="do not save individual samples. For speed measurements.")
-    parser.add_argument("--ddim_steps", type=int, default=50, help="number of ddim sampling steps")
-    parser.add_argument("--plms", action='store_true', help="use plms sampling")
-    parser.add_argument("--dpm_solver", action='store_true', help="use dpm_solver sampling")
-    parser.add_argument("--laion400m", action='store_true', help="uses the LAION400M model")
-    parser.add_argument("--fixed_code", action='store_true', help="if enabled, uses the same starting code across samples ")
-    parser.add_argument("--ddim_eta", type=float, default=0.0, help="ddim eta (eta=0.0 corresponds to deterministic sampling")
-    parser.add_argument("--n_iter", type=int, default=2, help="sample this often")
-    parser.add_argument("--H", type=int, default=512, help="image height, in pixel space")
-    parser.add_argument("--W", type=int, default=512, help="image width, in pixel space")
-    parser.add_argument("--C", type=int, default=4, help="latent channels")
-    parser.add_argument("--f", type=int, default=8, help="downsampling factor")
-    parser.add_argument("--n_samples", type=int, default=3, help="how many samples to produce for each given prompt. A.k.a. batch size")
-    parser.add_argument("--n_rows", type=int, default=0, help="rows in the grid (default: n_samples)")
-    parser.add_argument("--scale", type=float, default=7.5, help="unconditional guidance scale: eps = eps(x, empty) + scale * (eps(x, cond) - eps(x, empty))")
-    parser.add_argument("--from-file", type=str, help="if specified, load prompts from this file")
-    parser.add_argument("--config", type=str, default='./configs/stable-diffusion/v1-inference.yaml', help="path to config which constructs model")
-    parser.add_argument("--ckpt", type=str, default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned-emaonly.ckpt', help="path to checkpoint of model")
-    parser.add_argument("--seed", type=int, default=42, help="the seed (for reproducible sampling)")
-    parser.add_argument("--precision", type=str, help="evaluate at this precision", choices=["full", "autocast"], default="autocast")
-    parser.add_argument("--use_wm", default=False, type=lambda x: bool(strtobool(x)), help="Use watermarking")
+    parser.add_argument('--prompt', default='a painting of a virus monster playing guitar', type=str, nargs='?', help='the prompt to render')
+    parser.add_argument('--embdir', default='./text_inv_embeddings', type=str, help='Path to folder containing custom text embeddings.')
+    parser.add_argument('--outdir', default='./outputs/txt2img-samples', type=str, nargs='?', help='Directory to write files to.')
+    parser.add_argument('--skip_grid', default=True, type=lambda x: bool(strtobool(x)), help='Do not save a grid, only individual samples - grids are useful when evaluating many samples.')
+    parser.add_argument('--skip_save', default=False, type=lambda x: bool(strtobool(x)), help='Do not save individual samples - useful for speed measurements.')
+    parser.add_argument('--ddim_steps', default=50, type=int, help='Number of DDIM sampling steps.')
+    parser.add_argument('--plms', default=False, type=lambda x: bool(strtobool(x)), help='Use PLMS sampling.')
+    parser.add_argument('--dpm_solver', default=False, type=lambda x: bool(strtobool(x)), help='Use dpm_solver sampling.')
+    parser.add_argument('--laion400m', default=False, type=lambda x: bool(strtobool(x)), help='Use the LAION400M model.')
+    parser.add_argument('--fixed_code', default=False, type=lambda x: bool(strtobool(x)), help='Use the same starting code across samples.')
+    parser.add_argument('--ddim_eta', default=0.0, type=float, help='DDIM eta (eta=0.0 corresponds to deterministic sampling).')
+    parser.add_argument('--n_iter', default=2, type=int, help='Number of generation batches to run.')
+    parser.add_argument('--H', default=512, type=int, help='Generated image height (pixels).')
+    parser.add_argument('--W', default=512, type=int, help='Generated image width (pixels).')
+    parser.add_argument('--C', default=4, type=int, help='Number of latent channels.')
+    parser.add_argument('--f', default=8, type=int, help='Downsampling factor.')
+    parser.add_argument('--n_samples', default=3, type=int, help='Number of samples per generation (i.e., batch size).')
+    parser.add_argument('--n_rows', default=0, type=int, help='Number of rows in the output grid (defaults to n_samples)')
+    parser.add_argument('--scale', default=7.5, type=float, help='Unconditional guidance scale: eps = eps(x, empty) + scale * (eps(x, cond) - eps(x, empty))')
+    parser.add_argument('--from-file', type=str, help='If specified, load prompts from this file.')
+    parser.add_argument('--config', default='./configs/stable-diffusion/v1-inference.yaml', type=str, help='Path to config which constructs model.')
+    parser.add_argument('--ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned-emaonly.ckpt', type=str, help='Path to model checkpoint.')
+    parser.add_argument('--seed', default=42, type=int,  help='RNG seed for reproducibility.')
+    parser.add_argument('--precision', default='autocast', choices=['full', 'autocast'], type=str, help='Precision to evaluate.')
+    parser.add_argument('--use_wm', default=False, type=lambda x: bool(strtobool(x)), help='Apply watermarking to output images.')
     opt = parser.parse_args()
 
     if opt.laion400m:
-        print("Falling back to LAION 400M model...")
-        opt.config = "./configs/latent-diffusion/txt2img-1p4B-eval.yaml"
-        opt.ckpt = "./models/ldm/text2img-large/model.ckpt"
-        opt.outdir = "./outputs/txt2img-samples-laion400m"
+        print('Falling back to LAION 400M model...')
+        opt.config = './configs/latent-diffusion/txt2img-1p4B-eval.yaml'
+        opt.ckpt = './models/ldm/text2img-large/model.ckpt'
+        opt.outdir = './outputs/txt2img-samples-laion400m'
 
     seed_everything(opt.seed)
 
-    config = OmegaConf.load(f"{opt.config}")
-    model = load_model_from_config(config, f"{opt.ckpt}")
+    config = OmegaConf.load(f'{opt.config}')
+    model = load_model_from_config(config, f'{opt.ckpt}')
 
     #################
     # JStyborski Edit
 
     # Load pretrained text embeddings
     text_inv_dict = {}
-    for f in os.listdir(r'./text_inv_embeddings'):
-        pt_file = torch.load(os.path.join(os.getcwd(), r'./text_inv_embeddings', f))
+    for f in os.listdir(opt.embdir):
+        pt_file = torch.load(os.path.join(os.getcwd(), opt.embdir, f))
         text_inv_dict.update(pt_file)
 
     # Add tokens into tokenizer and resize the embedding dictionary
@@ -154,7 +155,7 @@ def main():
     token_embeds[-len(text_inv_dict):] = emb_tens
     #################
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model = model.to(device)
 
     if opt.dpm_solver:
@@ -167,9 +168,9 @@ def main():
     os.makedirs(opt.outdir, exist_ok=True)
     outpath = opt.outdir
 
-    wm = "StableDiffusionV1"
+    wm = 'StableDiffusionV1'
     if opt.use_wm:
-        print("Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...")
+        print('Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...')
         wm_encoder = WatermarkEncoder()
         wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
     else:
@@ -183,12 +184,12 @@ def main():
         data = [batch_size * [prompt]]
 
     else:
-        print(f"reading prompts from {opt.from_file}")
-        with open(opt.from_file, "r") as f:
+        print(f'reading prompts from {opt.from_file}')
+        with open(opt.from_file, 'r') as f:
             data = f.read().splitlines()
             data = list(chunk(data, batch_size))
 
-    sample_path = os.path.join(outpath, "samples")
+    sample_path = os.path.join(outpath, 'samples')
     os.makedirs(sample_path, exist_ok=True)
     base_count = len(os.listdir(sample_path))
     grid_count = len(os.listdir(outpath)) - 1
@@ -197,16 +198,16 @@ def main():
     if opt.fixed_code:
         start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
 
-    precision_scope = autocast if opt.precision=="autocast" else nullcontext
+    precision_scope = autocast if opt.precision=='autocast' else nullcontext
     with torch.no_grad():
-        with precision_scope("cuda"):
+        with precision_scope('cuda'):
             with model.ema_scope():
                 all_samples = list()
-                for n in trange(opt.n_iter, desc="Sampling"):
-                    for prompts in tqdm(data, desc="data"):
+                for n in trange(opt.n_iter, desc='Sampling'):
+                    for prompts in tqdm(data, desc='data'):
                         uc = None
                         if opt.scale != 1.0:
-                            uc = model.get_learned_conditioning(batch_size * [""])
+                            uc = model.get_learned_conditioning(batch_size * [''])
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
                         c = model.get_learned_conditioning(prompts)
@@ -231,7 +232,7 @@ def main():
                             for x_sample in x_samples_ddim:
                                 img = tvt.functional.to_pil_image(x_sample, mode='RGB')
                                 img = put_watermark(img, wm_encoder)
-                                img.save(os.path.join(sample_path, f"{base_count:05}.png"))
+                                img.save(os.path.join(sample_path, f'{base_count:05}.png'))
                                 base_count += 1
 
                         if not opt.skip_grid:
@@ -250,9 +251,9 @@ def main():
                     img.save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
                     grid_count += 1
 
-    print(f"Your samples are ready and waiting for you here: \n{outpath} \n"
-          f" \nEnjoy.")
+    print(f'Your samples are ready and waiting for you here: \n{outpath} \n'
+          f' \nEnjoy.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

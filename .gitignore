@@ -1,5 +1,7 @@
 *.ckpt
 __pycache__/
 .idea/
-vae_finetune/
+latent_diffusion.egg-info/
+src/
 text_inv_embeddings/
+vae_finetune/

@@ -77,7 +77,7 @@ def arg_inputs():
     args = parser.parse_args()
     return args
 
-if __name__ == "__main__":
+if __name__ == '__main__':
 
     args = arg_inputs()
     seed_everything(args.rand_seed)
@@ -123,5 +123,5 @@ if __name__ == "__main__":
         output = torch.clamp((attack_output[0] + 1.0) / 2.0, min=0.0, max=1.0).detach()
         output = tvt.functional.to_pil_image(output)
         output_path = os.path.join(args.output_dir, img_id)
-        print("Output image saved in path {}".format(output_path))
+        print('Output image saved in path {}'.format(output_path))
         output.save(output_path)

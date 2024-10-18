@@ -17,12 +17,12 @@ import torchvision.transforms as tvt
 from tqdm.auto import tqdm
 
 class TextualInversionDataset(Dataset):
-    def __init__(self, src_img_dir, img_repeats=100, img_size=512, center_crop=False, flip_pct=0.5, new_token="*", concept_type='object', use_filewords=True):
+    def __init__(self, src_img_dir, prompt_dir, img_repeats=100, img_size=512, center_crop=False, flip_pct=0.5, new_token="*", concept_type='object', use_filewords=True):
         self.src_img_dir = src_img_dir
         self.new_token = new_token
 
         # Open the set of prompt templates for the token
-        prompt_file = f'./scripts/text_inv_prompts/{concept_type}_filewords_prompts.txt' if use_filewords else './scripts/text_inv_prompts/{concept_type}_prompts.txt'
+        prompt_file = f'{prompt_dir}/{concept_type}_filewords_prompts.txt' if use_filewords else f'{prompt_dir}/{concept_type}_prompts.txt'
         with open(prompt_file, 'r') as f:
             self.prompt_templates = f.read().splitlines()
 
@@ -130,7 +130,7 @@ def training_function(args, train_dataset, model):
                 global_step += 1
 
             # Update progress bar
-            progress_bar.set_postfix(**{"loss": loss.detach().item()})
+            progress_bar.set_postfix(**{'loss': loss.detach().item()})
 
             # End training if current step over max setting
             if global_step >= args.max_train_steps:
@@ -142,14 +142,16 @@ def training_function(args, train_dataset, model):
     if accelerator.is_main_process:
         learned_embeds = accelerator.unwrap_model(accelerator.unwrap_model(model.cond_stage_model.transformer)).get_input_embeddings().weight[args.new_token_id]
         learned_embeds_dict = {args.new_token: learned_embeds.detach().cpu()}
-        os.makedirs(r'./text_inv_embeddings', exist_ok=True)
-        torch.save(learned_embeds_dict, os.path.join(r'./text_inv_embeddings', args.new_token + '.pt'))
+        os.makedirs(args.outdir, exist_ok=True)
+        torch.save(learned_embeds_dict, os.path.join(args.outdir, args.new_token + '.pt'))
 
 def arg_inputs():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sd_config', default='./configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model')
-    parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned-emaonly.ckpt', type=str, help='Path to checkpoint of model')
+    parser.add_argument('--sd_config', default='./configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model.')
+    parser.add_argument('--sd_ckpt', default='./checkpoints/stable-diffusion-v1-5/v1-5-pruned-emaonly.ckpt', type=str, help='Path to checkpoint of model.')
     parser.add_argument('--src_img_dir', default=None, type=str, help='Path of the directory of images to be processed.')
+    parser.add_argument('--prompt_dir', default='./scripts/text_inv_prompts', type=str, help='Directory containing prompt templates.')
+    parser.add_argument('--outdir', default='./text_inv_embeddings', type=str, help='Directory to save trained tokens in.')
     parser.add_argument('--new_token', default='RRRRR', type=str, help='Name of token embedding to learn.')
     parser.add_argument('--init_token', default='*', type=str, help='String for to initial embedding for new token. Set as None for zeros init. Set as empty string for N(0,1) init.')
     parser.add_argument('--concept_type', default='object', choices=['object', 'style'], type=str, help='Is the new token an object or a style?')
@@ -180,8 +182,8 @@ if __name__ == '__main__':
     args.lr = args.base_lr * args.batch_size * args.accum_iter * args.n_procs if args.scale_lr else args.base_lr
 
     # Instantiate train dataset
-    train_dataset = TextualInversionDataset(src_img_dir=args.src_img_dir, img_repeats=args.img_repeats, img_size=args.img_size,
-                                            center_crop=args.center_crop, flip_pct=args.flip_pct, new_token=args.new_token,
+    train_dataset = TextualInversionDataset(src_img_dir=args.src_img_dir, prompt_dir=args.prompt_dir, img_repeats=args.img_repeats,
+                                            img_size=args.img_size, center_crop=args.center_crop, flip_pct=args.flip_pct, new_token=args.new_token,
                                             concept_type=args.concept_type, use_filewords=args.use_filewords)
 
     # Load model

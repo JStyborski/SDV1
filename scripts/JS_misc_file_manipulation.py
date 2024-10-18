@@ -1,9 +1,11 @@
 import clip
+from io import BytesIO
 import numpy as np
 import os
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps
 import random
 import shutil
+from sklearn.cluster import KMeans
 import torch
 
 def run_main():
@@ -42,9 +44,83 @@ def run_main():
     # textDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions'
     # create_file_capt_dict(imgsDir, textDir)
 
+    # outDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs\KMeans16'
+    # image_transformer(srcDir, outDir, kmeans_transform, k=16)
+
+    # imgDir = r'D:\MSCOCO\train2017'
+    # #imgDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
+    # sig = img_pixel_variance(imgDir, queriesPerSample=10, sampleLimit=1000, x_range=12, y_range=12)
+    # print(sig)
+
+    # from JS_img2img import load_img
+    # img1 = r'D:\Art_Styles\Fish_Doll\Orig_Imgs\a stuffed animal is sitting on a ledge in a room with a white wall.png'
+    # img2 = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\a stuffed animal is sitting on a ledge in a room with a white wall.png'
+    # img1Tens = load_img(img1, 512)
+    # img2Tens = load_img(img2, 512)
+
+
+def grayscale_transform(img):
+    img = ImageOps.grayscale(img)
+    return img
+
+def blur_transform(img, sigma=2.):
+    img = img.filter(ImageFilter.GaussianBlur(radius=sigma))
+    return img
+
+def jpeg_transform(img, quality=10):
+    buffer = BytesIO()  # Create buffer object
+    img.save(buffer, 'JPEG', quality=quality)  # Save image as a JPEG in memory but not on disk
+    imgData = BytesIO(buffer.getbuffer())  # Load the image data contained in the buffer
+    img = Image.open(imgData)  # Load the image data
+    return img
+
+def bdr_transform(img, n_bits=4):
+    # Follows the BDR algorithm from https://arxiv.org/abs/1910.04397
+    bit_power = 2 ** n_bits - 1
+    img = np.array(img)
+    img = img / 255. * bit_power  # Scale image based on bit power
+    img = np.round(img) / bit_power * 255.  # Quantize image and scale to uint8
+    img = Image.fromarray(img.astype(np.uint8))
+    return img
+
+def kmeans_transform(img, k=16):
+    # Copied from Mingzhi's code, not sure if he got this from somewhere.
+    img = np.array(img)
+    pixel_values = img.flatten().reshape(-1, 1)  # Reshape image into a 1D array of pixel values
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')  # Perform k-means clustering
+    kmeans.fit(pixel_values)
+    bin_centers = kmeans.cluster_centers_  # Get the cluster centroids
+    quantized_pixels = bin_centers[kmeans.labels_].astype(np.uint8)  # Assign each pixel value to the nearest bin center
+    img = quantized_pixels.reshape(img.shape)  # Reshape the quantized pixels back to the original image shape
+    img = Image.fromarray(img)
+    return img
+
+def image_transformer(imgDir, outDir, transform, **kwargs):
+    """
+    Applies given transform to PIL images
+    :param imgDir: [str] - Image directory to gather images from
+    :param outDir: [str] - Directory to save images at
+    :param transform: [torchvision.transforms or equivalent function] - Function to process PIL images
+    :return:
+    """
+
+    # Create output directory if it doesn't exist
+    os.makedirs(outDir, exist_ok=True)
+
+    for imgFile in os.listdir(imgDir):
+
+        # Only process .png files
+        fileName, fileExt = os.path.splitext(imgFile)
+        if not os.path.isfile(os.path.join(imgDir, imgFile)) or fileExt != '.png':
+            continue
+
+        img = Image.open(os.path.join(imgDir, imgFile)).convert('RGB')
+        img = transform(img, **kwargs)
+        img.save(os.path.join(outDir, imgFile))
 
 def clip_embedding_searcher(srcImg, searchDir, nSamples, batchSize, findNearest=True):
     """
+    Find the image from a given directory that is closest to a given image, as measured by CLIP score
     :param srcImg: [str] - Source image filepath
     :param searchDir: [str] - Directory containing images to encode/search
     :param nSamples: [int] - Total number of samples to search
@@ -88,7 +164,8 @@ def clip_embedding_searcher(srcImg, searchDir, nSamples, batchSize, findNearest=
 
 def target_image_creator(imgFile, imgSize=256):
     """
-    :param imgFile: [str] - Image filepath to save as
+    Creates an image of specified size using a certain method (custom define)
+    :param imgFile: [str] - Image filepath to save on
     :param imgSize: [int] - Square image size
     :return: None, saves image file
     """
@@ -98,85 +175,24 @@ def target_image_creator(imgFile, imgSize=256):
     imgOut = Image.fromarray(imgArr)
     imgOut.save(imgFile)
 
-def image_resizer(imgDir, outDir, imgSize=256, resizeType=Image.LANCZOS):
+def jpg_to_png(imgDir):
     """
-    :param imgDir: [str] - Directory with images to resize
-    :param outDir: [str] - Directory to save resized images
-    :param imgSize: [int] - Final image size
-    :param resizeType: [PIL.Image.Resampling] - PIL Resampling type
-    :return: None, saves out files
-    """
-
-    # Create output directory if it doesn't exist
-    os.makedirs(outDir, exist_ok=True)
-
-    for imgFile in os.listdir(imgDir):
-
-        # Only process .png files
-        fileName, fileExt = os.path.splitext(imgFile)
-        if not os.path.isfile(os.path.join(imgDir, imgFile)) or fileExt != '.png':
-            continue
-
-        img = Image.open(os.path.join(imgDir, imgFile)).resize((imgSize, imgSize), resample=resizeType)
-        img.save(os.path.join(outDir, imgFile))
-
-def copy_files(srcDir, trgDir, fileNameList=None):
-    """
-    :param srcDir: [str] - Source directory containing files to copy
-    :param trgDir: [str] - Target directory to copy files into
-    :param fileNameList: [list] - List of filenames to copy from srcDir to newDir
-    :return: None, copies files
-    """
-
-    # Generate list of all filenames in srcDir if no fileNameList given
-    if fileNameList is None:
-        fileNameList = os.listdir(srcDir)
-
-    # Make new directory to copy files to
-    os.makedirs(trgDir, exist_ok=True)
-
-    # Copy each file from fileNameList to newDir
-    for fileName in fileNameList:
-        shutil.copy(os.path.join(srcDir, fileName), os.path.join(trgDir, fileName))
-
-def jpg_to_png(srcDir):
-    """
-    :param srcDir: Source directory with jpgs to convert into pngs
+    Convert all images in directory to PNG
+    :param imgDir: Source directory with jpgs to convert into pngs
     :return: None, converts jpg to png
     """
 
-    for file in os.listdir(srcDir):
+    for file in os.listdir(imgDir):
         fileName, fileExt = os.path.splitext(file)  # Get just the name of the file
-        if not os.path.isfile(os.path.join(srcDir, file)) or fileExt not in ['.jpg', '.jpeg']:
+        if not os.path.isfile(os.path.join(imgDir, file)) or fileExt not in ['.jpg', '.jpeg']:
             continue
-        img = Image.open(os.path.join(srcDir, file)).convert('RGB')  # Open jpg image
-        img.save(os.path.join(srcDir, fileName + '.png'), format='PNG')  # Save as png
-        os.remove(os.path.join(srcDir, file))  # Remove original jpg image
-
-def save_subimage(imgFile, resizeSize=256, subImgSize=128):
-    """
-    :param imgFile: [str] - Filepath to image file
-    :param resizeSize: [int] - Size to resize image to
-    :param subImgSize: [int] - Size to center crop image to
-    :return: None, saves subimage file
-    """
-
-    # Get image abspath
-    absPath = os.path.abspath(imgFile)
-    absPath = os.path.join('\\\\?\\' + absPath)
-
-    # Get image and subimage
-    imgArr = np.asarray(Image.open(absPath).convert('RGB').resize((resizeSize, resizeSize), resample=Image.BICUBIC))
-    minLim = int((resizeSize - subImgSize) / 2)
-    maxLim = int((resizeSize + subImgSize) / 2)
-    subImgArr = imgArr[minLim:maxLim, minLim:maxLim, :]  # Take center crop of image
-
-    # Save subimg array for viewing
-    outImg = Image.fromarray(np.uint8(subImgArr))
-    outImg.save(os.path.splitext(imgFile)[0] + '_Subimage.png')
+        img = Image.open(os.path.join(imgDir, file)).convert('RGB')  # Open jpg image
+        img.save(os.path.join(imgDir, fileName + '.png'), format='PNG')  # Save as png
+        os.remove(os.path.join(imgDir, file))  # Remove original jpg image
 
 def create_file_capt_dict(imgsDir, textDir):
     """
+    Create and save a dictionary of filename-caption values
     :param imgsDir: [str] - Directory with images where filenames will serve as dictionary keys
     :param textDir: [str] - Directory with text files with corresponding filenames that contain image caption text
     :return: None, saves dictionary file
@@ -203,6 +219,7 @@ def create_file_capt_dict(imgsDir, textDir):
 
 def file_caption_renamer(imgsDir, fileCaptDict, file2Capt=True):
     """
+    Rename all files in a directory according to their captions from a dictionary
     :param imgsDir: [str] - Directory with source images to rename, filenames correspond to fileCaptDict keys
     :param fileCaptDict: [str] - Filepath to file-caption dictionary
     :param file2Capt: [Bool] - Boolean to do file-to-caption (True) or caption-to-file (False) renaming
@@ -236,6 +253,7 @@ def file_caption_renamer(imgsDir, fileCaptDict, file2Capt=True):
 
 def scan_for_substring(srcDir):
     """
+    Search through text file strings and classify which files contain the string
     :param srcDir: [str] - Source directory with text files to search
     :return: Unique substrings that exist in directory files and match criteria
     """
@@ -263,6 +281,7 @@ def scan_for_substring(srcDir):
 
 def remove_substring(srcDir, newFileSuffix):
     """
+    Sort through text file strings and remove words that satisfy a certain criteria
     :param srcDir: [str] - Source directory with text files to search
     :param newFileSuffix: [str] - Suffix to add to new files with removed substring
     :return: None, saves files
@@ -295,6 +314,39 @@ def remove_substring(srcDir, newFileSuffix):
         newFile = fileName + newFileSuffix
         with open(os.path.join(srcDir, newFile), 'w', encoding='utf-8', errors='ignore') as f:
             f.write(newLine)
+
+# def img_pixel_variance(imgDir, queriesPerSample, sampleLimit, x_range, y_range):
+#
+#     diffList = []
+#     listDir = os.listdir(imgDir)
+#     for i in range(len(listDir)):
+#
+#         imgFile = np.random.choice(listDir)
+#
+#         # Only process .png files
+#         fileName, fileExt = os.path.splitext(imgFile)
+#         if not os.path.isfile(os.path.join(imgDir, imgFile)) or fileExt not in ['.png', '.jpg']:
+#             continue
+#
+#         img = np.array(Image.open(os.path.join(imgDir, imgFile)).convert('RGB')).astype(float)
+#         h, w, c = img.shape
+#
+#         for _ in range(queriesPerSample):
+#             rand_h = np.random.randint(y_range, h - y_range)
+#             rand_w = np.random.randint(x_range, w - x_range)
+#             rand_c = np.random.randint(c)
+#             h_del = rand_h + np.random.choice([-1, 1]) * y_range
+#             w_del = rand_w + np.random.choice([-1, 1]) * x_range
+#
+#             source_pixel = img[rand_h, rand_w, rand_c]
+#             query_pixel = img[h_del, w_del, rand_c]
+#             diffList.append(query_pixel - source_pixel)
+#
+#         if i > sampleLimit:
+#             break
+#
+#     print(diffList)
+#     return np.std(diffList)
 
 if __name__ == "__main__":
     run_main()
