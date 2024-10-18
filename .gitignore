@@ -1,9 +1,0 @@
-.gitattributes
-.gitignore
-*.ckpt
-.idea/
-__pycache__/
-latent_diffusion.egg-info/
-src/
-text_inv_embeddings/
-vae_finetune/
