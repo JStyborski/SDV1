@@ -17,6 +17,7 @@ from pytorch_lightning import seed_everything
 from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
+from ldm.models.diffusion.dpm_solver import DPMSolverSampler
 import JS_img2noise2img
 
 
@@ -66,7 +67,7 @@ def arg_inputs():
     parser.add_argument('--skip_grid', default=False, type=lambda x: bool(strtobool(x)), help='do not save a grid, only individual samples. Helpful when evaluating lots of samples')
     parser.add_argument('--skip_save', default=False, type=lambda x: bool(strtobool(x)), help='Do not save indiviual samples. For speed measurements.')
     parser.add_argument('--ddim_steps', default=50, type=int, help='Number of ddim sampling steps (across T=1000 DDPM steps).')
-    parser.add_argument('--plms', default=False, type=lambda x: bool(strtobool(x)), help='Use PLMS sampling, not implemented yet.')
+    parser.add_argument('--sampler', default='ddim', choices=['ddim', 'plms', 'dpm'], type=str, help='Solver type.')
     parser.add_argument('--fixed_code', default=False, type=lambda x: bool(strtobool(x)), help='If enabled, uses the same starting code across all samples.')
     parser.add_argument('--ddim_eta', default=0.0, type=float, help='DDIM eta (eta=0.0 is deterministic sampling).')
     parser.add_argument('--n_iter', default=1, type=int, help='sample this often')
@@ -101,8 +102,9 @@ def main():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model = model.to(device)
 
-    if opt.plms:
-        raise NotImplementedError('PLMS sampler not (yet) supported')
+    if opt.sampler == 'dpm':
+        sampler = DPMSolverSampler(model)
+    elif opt.sampler == 'plms':
         sampler = PLMSSampler(model)
     else:
         sampler = DDIMSampler(model)

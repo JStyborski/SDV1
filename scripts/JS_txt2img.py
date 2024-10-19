@@ -104,8 +104,7 @@ def main():
     parser.add_argument('--skip_grid', default=True, type=lambda x: bool(strtobool(x)), help='Do not save a grid, only individual samples - grids are useful when evaluating many samples.')
     parser.add_argument('--skip_save', default=False, type=lambda x: bool(strtobool(x)), help='Do not save individual samples - useful for speed measurements.')
     parser.add_argument('--ddim_steps', default=50, type=int, help='Number of DDIM sampling steps.')
-    parser.add_argument('--plms', default=False, type=lambda x: bool(strtobool(x)), help='Use PLMS sampling.')
-    parser.add_argument('--dpm_solver', default=False, type=lambda x: bool(strtobool(x)), help='Use dpm_solver sampling.')
+    parser.add_argument('--sampler', default='ddim', choices=['ddim', 'plms', 'dpm'], type=str, help='Solver type.')
     parser.add_argument('--laion400m', default=False, type=lambda x: bool(strtobool(x)), help='Use the LAION400M model.')
     parser.add_argument('--fixed_code', default=False, type=lambda x: bool(strtobool(x)), help='Use the same starting code across samples.')
     parser.add_argument('--ddim_eta', default=0.0, type=float, help='DDIM eta (eta=0.0 corresponds to deterministic sampling).')
@@ -158,9 +157,9 @@ def main():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model = model.to(device)
 
-    if opt.dpm_solver:
+    if opt.sampler == 'dpm':
         sampler = DPMSolverSampler(model)
-    elif opt.plms:
+    elif opt.sampler == 'plms':
         sampler = PLMSSampler(model)
     else:
         sampler = DDIMSampler(model)

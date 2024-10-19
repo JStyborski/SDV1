@@ -44,8 +44,18 @@ def run_main():
     # textDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions'
     # create_file_capt_dict(imgsDir, textDir)
 
-    # outDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs\KMeans16'
-    # image_transformer(srcDir, outDir, kmeans_transform, k=16)
+    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\BDR6'
+    # image_transformer(srcDir, outDir, bdr_transform, n_bits=2)
+    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\Blur2'
+    # image_transformer(srcDir, outDir, blur_transform, sigma=2)
+    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\Grayscale'
+    # image_transformer(srcDir, outDir, grayscale_transform)
+    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\JPEG25'
+    # image_transformer(srcDir, outDir, jpeg_transform, quality=25)
+    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\KMeans4'
+    # image_transformer(srcDir, outDir, kmeans_transform, k=4)
+    # outDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs\Noise32'
+    # image_transformer(srcDir, outDir, noise_transform, noise_type='uniform', strength=32)
 
     # imgDir = r'D:\MSCOCO\train2017'
     # #imgDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
@@ -93,6 +103,17 @@ def kmeans_transform(img, k=16):
     quantized_pixels = bin_centers[kmeans.labels_].astype(np.uint8)  # Assign each pixel value to the nearest bin center
     img = quantized_pixels.reshape(img.shape)  # Reshape the quantized pixels back to the original image shape
     img = Image.fromarray(img)
+    return img
+
+def noise_transform(img, noise_type='uniform', strength=16):
+    # Apply uniform or normal noise to image
+    img = np.array(img).astype(float)
+    if noise_type == 'uniform':
+        img = img + np.random.uniform(low=-strength, high=strength, size=img.shape)
+    elif noise_type == 'normal':
+        img = img + np.random.normal(scale=strength)
+    img = np.clip(img, a_min=0., a_max=255.)
+    img = Image.fromarray(img.astype(np.uint8))
     return img
 
 def image_transformer(imgDir, outDir, transform, **kwargs):

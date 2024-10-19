@@ -108,6 +108,16 @@ def training_function(args, train_dataset, model):
                 z = model.get_first_stage_encoding(z_dist)
                 c = model.get_learned_conditioning(batch['text_values'])
                 loss = model(z, c)[0]
+                if args.emb_l2_wt > 0.:
+                    mean_l2 = torch.mean(torch.linalg.vector_norm(model.cond_stage_model.transformer.text_model.embeddings.token_embedding.weight[:-1, :], dim=1))
+                    loss += args.emb_l2_wt * (torch.linalg.vector_norm(model.cond_stage_model.transformer.text_model.embeddings.token_embedding.weight[-1, :]) - mean_l2)
+                if args.emb_cl_wt > 0.:
+                    pos_id = model.cond_stage_model.tokenizer.convert_tokens_to_ids(random.choice(args.pos_token_list))
+                    neg_ids = random.sample(range(len(model.cond_stage_model.tokenizer) - 1), k=args.cl_batch_size-1)
+                    all_ids = [pos_id] + neg_ids
+                    all_emb = model.cond_stage_model.transformer.text_model.embeddings.token_embedding.weight[all_ids, :]
+                    new_emb = model.cond_stage_model.transformer.text_model.embeddings.token_embedding.weight[-1, :].unsqueeze(0)
+                    loss += args.emb_cl_wt * weighted_infonce_loss(new_emb, all_emb, wince_beta=args.cl_beta, wince_tau=args.cl_tau)
                 accelerator.backward(loss)
 
                 # Zero out the gradients for all token embeddings except the newly added
@@ -145,6 +155,31 @@ def training_function(args, train_dataset, model):
         os.makedirs(args.outdir, exist_ok=True)
         torch.save(learned_embeds_dict, os.path.join(args.outdir, args.new_token + '.pt'))
 
+def weighted_infonce_loss(new_emb, other_emb, wince_beta=1., wince_tau=0.2):
+    # Implements weighted InfoNCE loss as in https://arxiv.org/abs/2006.07733 and based on https://arxiv.org/abs/2002.05709
+    # Crucially, BYOL implements a weighted InfoNCE by distributing the log( ) term within the innermost summation
+    # L_InfoNCE = 1/N * sum_i=1:N[ s_a1i_a2i/T + log( sum_j=1:N,j=/=i[ exp(s_a1i_a1j/T) + sum_j=1:N[ exp(s_a1i_a2j/T) ] ] ) ]
+    # where s_a1i_a2j is the projection cosine similarity between sample i of augmentation batch 1 and sample j of augmentation batch 2, and T is temp
+    # In the code below, posLoss handles the s_a1i_a2i term, nsvs represents s_a1i_a1j, and ndvs represents s_a1i_a2j
+    # The code allows symmetrized losses and also the use of MultiAug and MultiCrop (i.e., >2 augmentation batches)
+    # Data is automatically L2 normalized in the encoding dimension in the cosine_similarity and pairwise_cosine_similarity functions
+    # The IFM paper (https://arxiv.org/abs/2106.11230) perturbs the InfoNCE similarity by epsilon and averages regular and perturbed InfoNCE losses
+    # To save on compute, the epsilon-based perturbed loss shadows the regular loss at every step and only triggers if winceEps > 0.0
+
+    # Calculate cosine similarity loss between positive embeddings
+    posLoss = -1. * torch.nn.functional.cosine_similarity(new_emb, other_emb[(0,), :])
+
+    # Calculate negative similarity loss (InfoNCE denominator) - This formulation is best seen in the BYOL paper
+    if wince_beta > 0.0:
+        negSim = torch.nn.functional.cosine_similarity(new_emb, other_emb)
+        negLoss = torch.exp(negSim / wince_tau).sum().log()
+        winceLoss = posLoss / wince_tau + wince_beta * negLoss
+    else:
+        winceLoss = posLoss
+
+    return winceLoss
+
+
 def arg_inputs():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sd_config', default='./configs/stable-diffusion/v1-inference-mist.yaml', type=str, help='Path to config which constructs model.')
@@ -165,7 +200,13 @@ def arg_inputs():
     parser.add_argument('--batch_size', default=1, type=int, help='Total batch size across GPUs per iteration (before accumulation)')
     parser.add_argument('--accum_iter', default=1, type=int, help='Number of iterations to accumulate gradients before backpropagation.')
     parser.add_argument('--max_train_steps', default=10000, type=int, help='Maximum number of training steps before exit.')
-    parser.add_argument('--vae_sampling', default='random', choices=['random', 'deterministic'], type=str, help='Encoding distribution sampling method - deterministic sets var/std to 0.')
+    parser.add_argument('--vae_sampling', default='deterministic', choices=['deterministic', 'random'], type=str, help='Encoding distribution sampling method - deterministic sets var/std to 0.')
+    parser.add_argument('--emb_l2_wt', default=0., type=float, help='Weight to apply on L2 loss for new token embedding - only runs if >0.')
+    parser.add_argument('--emb_cl_wt', default=0., type=float, help='Weight to apply on contrastive loss for new token embedding - only runs if >0.')
+    parser.add_argument('--pos_token_list', default=None, nargs='+', type=str, help='Tokens to use as positive samples for new token.')
+    parser.add_argument('--cl_batch_size', default=128, type=int, help='Batch size for contrastive learning.')
+    parser.add_argument('--cl_beta', default=1., type=float, help='Weight to apply on negatives loss in contrastive learning - 0. means positive alignment only.')
+    parser.add_argument('--cl_tau', default=0.2, type=float, help='Contrastive loss temperature.')
     parser.add_argument('--rand_seed', default=42, type=int, help='RNG seed for reproducibility.')
     args = parser.parse_args()
     return args
