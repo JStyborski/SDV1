@@ -167,11 +167,11 @@ def weighted_infonce_loss(new_emb, other_emb, wince_beta=1., wince_tau=0.2):
     # To save on compute, the epsilon-based perturbed loss shadows the regular loss at every step and only triggers if winceEps > 0.0
 
     # Calculate cosine similarity loss between positive embeddings
-    posLoss = -1. * torch.nn.functional.cosine_similarity(new_emb, other_emb[(0,), :])
+    posLoss = -1. * torch.nn.functional.cosine_similarity(new_emb[0, :], other_emb[0, :], dim=0)
 
     # Calculate negative similarity loss (InfoNCE denominator) - This formulation is best seen in the BYOL paper
     if wince_beta > 0.0:
-        negSim = torch.nn.functional.cosine_similarity(new_emb, other_emb)
+        negSim = torch.nn.functional.cosine_similarity(new_emb, other_emb, dim=1)
         negLoss = torch.exp(negSim / wince_tau).sum().log()
         winceLoss = posLoss / wince_tau + wince_beta * negLoss
     else:
