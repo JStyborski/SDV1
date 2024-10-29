@@ -10,18 +10,7 @@ import torch
 
 def run_main():
 
-    # srcDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs'
-    # mstDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Misted_Imgs\test'
-
-    srcDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
-    #jpg_to_png(srcDir)
-
-    # CLIP Searcher
-    # srcImg = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Generated_Imgs\00000-4004092763.png'
-    # searchDir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Generated_Imgs'
-    # nSamples = 1024
-    # batchSize = 128
-    # clip_embedding_searcher(srcImg, searchDir, nSamples, batchSize)
+    imgDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
 
     # SubImg Saver
     # imgDir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Target_Imgs'
@@ -30,35 +19,24 @@ def run_main():
     #     save_subimage(imgFile, resizeSize=256, subImgSize=256)
 
     # JPG to PNG Converter
-    # imgDir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Landscapes_JuliaSPowell\Orig_Imgs'
+    # imgDir = r'D:\Art_Styles\rand_test'
     # jpg_to_png(imgDir)
 
     # File Renamer
     # fileCaptDict = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions\file_caption_dict.npy'
     # file_caption_renamer(imgsDir, fileCaptDict, file2Capt=True)
 
+    # textDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions'
+    # create_file_capt_dict(imgsDir, textDir)
+
     # Image Resizer
     # outDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs\resize512'
     # image_resizer(srcDir, outDir, 512)
 
-    # textDir = r'D:\Art_Styles\Rayonism_Natalia_Goncharova\Orig_Imgs\BLIP_Captions'
-    # create_file_capt_dict(imgsDir, textDir)
-
     # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\BDR6'
     # image_transformer(srcDir, outDir, bdr_transform, n_bits=2)
-    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\Blur2'
-    # image_transformer(srcDir, outDir, blur_transform, sigma=2)
-    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\Grayscale'
-    # image_transformer(srcDir, outDir, grayscale_transform)
-    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\JPEG25'
-    # image_transformer(srcDir, outDir, jpeg_transform, quality=25)
-    # outDir = r'D:\Art_Styles\Fish_Doll\Misted_Imgs\Orig_M2\KMeans4'
-    # image_transformer(srcDir, outDir, kmeans_transform, k=4)
-    # outDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs\Noise32'
-    # image_transformer(srcDir, outDir, noise_transform, noise_type='uniform', strength=32)
 
     # imgDir = r'D:\MSCOCO\train2017'
-    # #imgDir = r'D:\Art_Styles\Fish_Doll\Orig_Imgs'
     # sig = img_pixel_variance(imgDir, queriesPerSample=10, sampleLimit=1000, x_range=12, y_range=12)
     # print(sig)
 
@@ -68,6 +46,31 @@ def run_main():
     # img1Tens = load_img(img1, 512)
     # img2Tens = load_img(img2, 512)
 
+    # CLIP Searcher
+    # srcImg = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Generated_Imgs\00000-4004092763.png'
+    # searchDir = r'C:\Users\jeremy\Python_Projects\Art_Styles\images\Rayonism_Natalia_Goncharova\Generated_Imgs'
+    # nSamples = 1024
+    # batchSize = 128
+    # clip_embedding_searcher(srcImg, searchDir, nSamples, batchSize)
+
+    # Set device and load CLIP
+    imgDir2 = r'D:\Art_Styles\rand_test'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model, preprocess = clip.load('ViT-L/14', device=device)
+
+    # Get image embeddings
+    allEmbs = get_clip_embs(imgDir, preprocess, model, device)
+    allEmbs2 = get_clip_embs(imgDir2, preprocess, model, device)
+    sims = torch.nn.functional.cosine_similarity(allEmbs, allEmbs2)
+    print(sims)
+
+    # Get zero shot classification
+    # IN_dict = torch.load(r'D:\ImageNet1k\ImageNet_Class_Dict.pt')
+    # for i in range(len(allEmbs)):
+    #     print(clip_zero_shot_cls(allEmbs[i], IN_dict, model, device, topk=3))
+    # print('')
+    # for i in range(len(allEmbs2)):
+    #     print(clip_zero_shot_cls(allEmbs2[i], IN_dict, model, device, topk=3))
 
 def grayscale_transform(img):
     img = ImageOps.grayscale(img)
@@ -138,6 +141,34 @@ def image_transformer(imgDir, outDir, transform, **kwargs):
         img = Image.open(os.path.join(imgDir, imgFile)).convert('RGB')
         img = transform(img, **kwargs)
         img.save(os.path.join(outDir, imgFile))
+
+def get_clip_embs(imgDir, clipPreprocess, clipModel, device):
+
+    encList = []
+    for imgFile in os.listdir(imgDir):
+
+        # Only process .png files
+        fileName, fileExt = os.path.splitext(imgFile)
+        if not os.path.isfile(os.path.join(imgDir, imgFile)) or fileExt != '.png':
+            continue
+
+        # Load image and encode
+        imgTens = clipPreprocess(Image.open(os.path.join(imgDir, imgFile))).unsqueeze(0).to(device)
+        with torch.no_grad():
+            encList.append(clipModel.encode_image(imgTens).to(device))
+
+    return torch.cat(encList, dim=0).float()
+
+def clip_zero_shot_cls(imgEmb, clsDict, clipModel, device, topk=5):
+
+    # Get text embeddings
+    text_inputs = torch.cat([clip.tokenize(f'A photo of a {cls}') for cls in clsDict.values()]).to(device)
+    with torch.no_grad():
+        text_features = clipModel.encode_text(text_inputs).to(device).float()
+
+    sims = torch.nn.functional.cosine_similarity(imgEmb, text_features)
+    _, indices = sims.topk(topk)
+    return [clsDict[idx.item()] for idx in indices.data]
 
 def clip_embedding_searcher(srcImg, searchDir, nSamples, batchSize, findNearest=True):
     """

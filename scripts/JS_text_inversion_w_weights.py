@@ -3,101 +3,82 @@
 import accelerate
 import argparse
 from distutils.util import strtobool
-from JS_img2img import load_model_from_config
+from JS_text_inversion import TextualInversionDataset, freeze_params, weighted_infonce_loss
+from ldm.util import instantiate_from_config
 import math
 from omegaconf import OmegaConf
 import os
-from PIL import Image
 from pytorch_lightning import seed_everything
 import random
 import torch
 import torch.utils.checkpoint
 from torch.utils.data import Dataset
-import torchvision.transforms as tvt
 from tqdm.auto import tqdm
 
-class TextualInversionDataset(Dataset):
-    def __init__(self, src_img_dir, prompt_dir, img_repeats=100, img_size=512, center_crop=False, flip_pct=0.5, new_token="*", concept_type='object', use_filewords=True):
-        self.src_img_dir = src_img_dir
-        self.new_token = new_token
+def load_model_from_config(config, ckpt, verbose=False):
+    print(f"Loading model from {ckpt}")
+    pl_sd = torch.load(ckpt, map_location="cpu")
+    if "global_step" in pl_sd:
+        print(f"Global Step: {pl_sd['global_step']}")
+    sd = pl_sd["state_dict"]
+    model = instantiate_from_config(config.model)
 
-        # Open the set of prompt templates for the token
-        prompt_file = f'{prompt_dir}/{concept_type}_filewords_prompts.txt' if use_filewords else f'{prompt_dir}/{concept_type}_prompts.txt'
-        with open(prompt_file, 'r') as f:
-            self.prompt_templates = f.read().splitlines()
+    # Replace text embedder with custom embedder defined here
+    model.cond_stage_model.transformer.text_model.embeddings = CustomCLIPTextEmbeddings(model.cond_stage_model.transformer.text_model.config)
 
-        # Read the dataset of images
-        self.img_list = sorted([f for f in os.listdir(self.src_img_dir) if f.endswith('.png') or f.endswith('.jpg')])
-        self._length = len(self.img_list) * img_repeats
+    m, u = model.load_state_dict(sd, strict=False)
+    if len(m) > 0 and verbose:
+        print("missing keys:")
+        print(m)
+    if len(u) > 0 and verbose:
+        print("unexpected keys:")
+        print(u)
 
-        # Define image transform
-        self.transform = tvt.Compose([
-            tvt.Lambda(lambda x: tvt.CenterCrop(min(x.size)) if center_crop else x),
-            tvt.Resize((img_size, img_size), interpolation=tvt.functional._interpolation_modes_from_int(3)),  # 0 Nearest, 1 Lanczos, 2 Bilinear, 3 Bicubic
-            # tvt.RandomResizedCrop(img_size, scale=(0.2, 1.)),
-            # tvt.RandomApply([tvt.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-            # tvt.RandomGrayscale(p=0.2),
-            # tvt.RandomApply([tvt.GaussianBlur(kernel_size=9, sigma=(0.1, 2.0))], p=0.5),
-            tvt.RandomHorizontalFlip(p=flip_pct),
-            tvt.ToTensor(),
-            tvt.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # Performs the 2 * [0, 1] - 1 operation expected by LDM
-        ])
+    model.cuda()
+    model.eval()
+    return model
 
-    def __len__(self):
-        return self._length
+class CustomCLIPTextEmbeddings(torch.nn.Module):
+    # I copied this CLIPTextEmbeddings module from the CLIP scripts
+    # Modified to use custom embedding vectors for tokens identified by custom mask
 
-    def create_text(self, filename_text):
-        # Copied from SD WebUI
-        text = random.choice(self.prompt_templates)
-        tags = filename_text.replace('_', ',').replace('-', ',').replace(' ', ',').split(',')
-        # if self.tag_drop_out != 0:
-        #     tags = [t for t in tags if random.random() > self.tag_drop_out]
-        # if self.shuffle_tags:
-        #     random.shuffle(tags)
-        text = text.replace('[filewords]', ' '.join(tags))
-        text = text.replace('[name]', self.new_token)
-        return text
+    def __init__(self, config):
+        super().__init__()
+        embed_dim = config.hidden_size
 
-    def __getitem__(self, i):
-        example = {}
-        filename, fileext = os.path.splitext(self.img_list[i % len(self.img_list)])
-        example['text_values'] = self.create_text(filename)
-        img = Image.open(os.path.join(self.src_img_dir, filename + fileext)).convert('RGB')
-        example['pixel_values'] = self.transform(img)
+        self.token_embedding = torch.nn.Embedding(config.vocab_size, embed_dim)
+        self.position_embedding = torch.nn.Embedding(config.max_position_embeddings, embed_dim)
 
-        return example
+        # position_ids (1, len position emb) is contiguous in memory and exported when serialized
+        self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
 
-def freeze_params(params):
-    # Freeze all parameters in a given network
-    for param in params:
-        param.requires_grad = False
+        # Added by JStyborski
+        self.custom_mask = None
+        self.custom_embed = None
 
-def weighted_infonce_loss(new_embed, other_embed, wince_beta=1., wince_tau=0.2):
-    # Implements weighted InfoNCE loss as in https://arxiv.org/abs/2006.07733 and based on https://arxiv.org/abs/2002.05709
-    # Crucially, BYOL implements a weighted InfoNCE by distributing the log( ) term within the innermost summation
-    # L_InfoNCE = s_anew_a1/T + log( sum_j=1:N[ exp(s_anew_aj/T) ] )
-    # where s_anew_aj is the cosine similarity between new_emb and the jth embedding of the batch, and T is temp
-    # Data is automatically L2 normalized in the encoding dimension in the cosine_similarity and pairwise_cosine_similarity functions
+    def forward(self, input_ids=None, position_ids=None, inputs_embeds=None) -> torch.Tensor:
 
-    # Calculate cosine similarity loss between positive embeddings
-    posLoss = -1. * torch.nn.functional.cosine_similarity(new_embed[0, :], other_embed[0, :], dim=0)
+        seq_length = input_ids.shape[-1] if input_ids is not None else inputs_embeds.shape[-2]
 
-    # Calculate negative similarity loss (InfoNCE denominator) - This formulation is best seen in the BYOL paper
-    if wince_beta > 0.0:
-        negSim = torch.nn.functional.cosine_similarity(new_embed, other_embed, dim=1)
-        negLoss = torch.exp(negSim / wince_tau).sum().log()
-        winceLoss = posLoss / wince_tau + wince_beta * negLoss
-    else:
-        winceLoss = posLoss
+        if position_ids is None:
+            position_ids = self.position_ids[:, :seq_length]
 
-    return winceLoss
+        if inputs_embeds is None:
+            inputs_embeds = self.token_embedding(input_ids)
+            inputs_embeds[self.custom_mask] = self.custom_embed  # Added by JStyborski
 
-def training_function(args, train_dataset, model):
+        position_embeddings = self.position_embedding(position_ids)
+        embeddings = inputs_embeds + position_embeddings
+
+        return embeddings
+
+# def training_function(args, train_dataset, model):
+def training_function(args, train_dataset, model, base_embeds, base_wts):
 
     accelerator = accelerate.Accelerator(gradient_accumulation_steps=args.accum_iter)
 
     # Initialize the optimizer (only learn the input embeddings) and dataloader
-    optimizer = torch.optim.AdamW(model.cond_stage_model.transformer.get_input_embeddings().parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW([base_wts], lr=args.lr)
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
 
     # Prepare model
@@ -106,7 +87,6 @@ def training_function(args, train_dataset, model):
     # Move model to device and set in eval except for the text_encoder in train mode
     model.to(accelerator.device)
     model.eval()
-    model.cond_stage_model.transformer.train()
 
     # Determine number of epochs required to achieve given steps
     # If batch_size * accum_iter * n_procs > dataset size, step/zero_grad triggers at end of dataset instead of carrying through to next epoch
@@ -122,37 +102,38 @@ def training_function(args, train_dataset, model):
         for step, batch in enumerate(train_dataloader):
             with accelerator.accumulate(model):
 
-                # Get image encoding and text encoding
+                # Get image encoding
                 z_dist = model.encode_first_stage(batch['pixel_values'])
                 if args.vae_sampling == 'deterministic':
                     # If True, latent always returns mean vector, else samples
                     z_dist.deterministic = True
                     z_dist.var = z_dist.std = torch.zeros_like(z_dist.mean).to(device=z_dist.parameters.device)
                 z = model.get_first_stage_encoding(z_dist)
+
+                # Calculate and store the weighted embedding vector, then get text encoding
+                batch_encoding = model.cond_stage_model.tokenizer(batch['text_values'], truncation=True,
+                                                                  max_length=model.cond_stage_model.tokenizer.model_max_length, return_length=True,
+                                                                  return_overflowing_tokens=False, padding="max_length", return_tensors="pt")
+                token_ids = batch_encoding["input_ids"].to(model.device)
+                if args.wts_softmax:
+                    new_embed = torch.matmul(torch.nn.functional.softmax(base_wts, dim=1), base_embeds)
+                else:
+                    new_embed = torch.matmul(base_wts, base_embeds)
+                model.cond_stage_model.transformer.text_model.embeddings.custom_mask = token_ids == args.new_token_id
+                model.cond_stage_model.transformer.text_model.embeddings.custom_embed = new_embed
                 c = model.get_learned_conditioning(batch['text_values'])
 
                 # Calculate loss and add regularization to text embedding
                 loss = model(z, c)[0]
                 if args.emb_l2_wt > 0.:
-                    loss += args.emb_l2_wt * torch.linalg.vector_norm(model.cond_stage_model.transformer.get_input_embeddings().weight[-1, :])
+                    loss += args.emb_l2_wt * torch.linalg.vector_norm(new_embed)
                 if args.emb_cl_wt > 0.:
                     pos_id = model.cond_stage_model.tokenizer.convert_tokens_to_ids(random.choice(args.pos_token_list))
                     neg_ids = random.sample(range(len(model.cond_stage_model.tokenizer) - 1), k=args.cl_batch_size-1)
                     all_ids = [pos_id] + neg_ids
                     all_embed = model.cond_stage_model.transformer.get_input_embeddings().weight[all_ids, :]
-                    new_embed = model.cond_stage_model.transformer.get_input_embeddings().weight[-1, :].unsqueeze(0)
                     loss += args.emb_cl_wt * weighted_infonce_loss(new_embed, all_embed, wince_beta=args.cl_beta, wince_tau=args.cl_tau)
-                accelerator.backward(loss)
-
-                # Zero out the gradients for all token embeddings except the newly added
-                # embeddings for the concept, as we only want to optimize the concept embeddings
-                if accelerator.num_processes > 1:
-                    grads = model.module.cond_stage_model.transformer.get_input_embeddings().weight.grad
-                else:
-                    grads = model.cond_stage_model.transformer.get_input_embeddings().weight.grad
-                # Get the index for tokens that we want to zero the grads for
-                index_grads_to_zero = torch.arange(len(model.cond_stage_model.tokenizer)) != args.new_token_id
-                grads.data[index_grads_to_zero, :] = grads.data[index_grads_to_zero, :].fill_(0)
+                accelerator.backward(loss, retain_graph=False)
 
                 # Step the optimizer to update the token embedding and then reset grads
                 optimizer.step()
@@ -174,7 +155,10 @@ def training_function(args, train_dataset, model):
 
     # Save the newly trained embeddings
     if accelerator.is_main_process:
-        learned_embed = accelerator.unwrap_model(accelerator.unwrap_model(model.cond_stage_model.transformer)).get_input_embeddings().weight[args.new_token_id]
+        if args.wts_softmax:
+            learned_embed = torch.matmul(torch.nn.functional.softmax(base_wts, dim=1), base_embeds)
+        else:
+            learned_embed = torch.matmul(base_wts, base_embeds)
         learned_embed_dict = {args.new_token: learned_embed.squeeze().detach().cpu()}
         os.makedirs(args.outdir, exist_ok=True)
         torch.save(learned_embed_dict, os.path.join(args.outdir, args.new_token + '.pt'))
@@ -200,6 +184,9 @@ def arg_inputs():
     parser.add_argument('--accum_iter', default=1, type=int, help='Number of iterations to accumulate gradients before backpropagation.')
     parser.add_argument('--max_train_steps', default=10000, type=int, help='Maximum number of training steps before exit.')
     parser.add_argument('--vae_sampling', default='deterministic', choices=['deterministic', 'random'], type=str, help='Encoding distribution sampling method - deterministic sets var/std to 0.')
+    parser.add_argument('--base_tokens', default=None, nargs='+', type=str, help='Tokens to use as embedding basis for learning embedding weights - set as None to use all embeddings.')
+    parser.add_argument('--wts_init', default='normal', choices=['normal', 'zeros'], type=str, help='Gaussian or zero weight initialization.')
+    parser.add_argument('--wts_softmax', default=True, type=lambda x: bool(strtobool(x)), help='Whether to apply softmax to embedding weights.')
     parser.add_argument('--emb_l2_wt', default=0., type=float, help='Weight to apply on L2 loss for new token embedding - only runs if >0.')
     parser.add_argument('--emb_cl_wt', default=0., type=float, help='Weight to apply on contrastive loss for new token embedding - only runs if >0.')
     parser.add_argument('--pos_token_list', default=None, nargs='+', type=str, help='Tokens to use as positive samples for new token.')
@@ -245,23 +232,20 @@ if __name__ == '__main__':
     args.new_token_id = tokenizer.convert_tokens_to_ids(args.new_token)
     text_encoder.resize_token_embeddings(len(tokenizer))
 
-    # Initialize the new token embedding
-    token_embeds = text_encoder.get_input_embeddings().weight.data
-    if args.init_token is None:
-        # Initialize new embedding with zeros
-        token_embeds[args.new_token_id] = torch.zeros_like(token_embeds[0, :])
-    elif args.init_token != '':
-        # Initialize new embedding with the initializer embedding
-        init_token_id = tokenizer.encode(args.init_token, add_special_tokens=False)
-        assert len(init_token_id) == 1, f'The initializer_token {args.init_token} encodes as multiple tokens.'
-        token_embeds[args.new_token_id] = token_embeds[init_token_id[0]]
-    # else new embedding initializes with samples from N(0, 1) distribution
+    if args.base_tokens is not None:
+        base_ids = tokenizer.convert_tokens_to_ids(args.base_tokens)
+        base_embeds = text_encoder.get_input_embeddings().weight.data[base_ids].detach()
+    else:
+        base_embeds = text_encoder.get_input_embeddings().weight.data.detach()
+    if args.wts_init == 'normal':
+        base_wts = torch.nn.Parameter(0.1 * torch.randn(1, len(base_embeds)), requires_grad=False).to(base_embeds.device)
+    elif args.wts_init == 'zeros':
+        base_wts = torch.nn.Parameter(torch.zeros(1, len(base_embeds)), requires_grad=False).to(base_embeds.device)
+    base_wts.requires_grad = True
 
-    # Freeze vae, unet, and all text_encoder parameters except for the token embeddings
+    # Freeze vae, unet, and text_encoder parameters
     freeze_params(model.first_stage_model.parameters())  # VAE
     freeze_params(model.model.parameters())  # U-Net
-    freeze_params(text_encoder.text_model.encoder.parameters())
-    freeze_params(text_encoder.text_model.final_layer_norm.parameters())
-    freeze_params(text_encoder.text_model.embeddings.position_embedding.parameters())
+    freeze_params(text_encoder.parameters())
 
-    accelerate.notebook_launcher(training_function, args=(args, train_dataset, model), num_processes=args.n_procs)
+    accelerate.notebook_launcher(training_function, args=(args, train_dataset, model, base_embeds, base_wts), num_processes=args.n_procs)
