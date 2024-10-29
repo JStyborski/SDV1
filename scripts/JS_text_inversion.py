@@ -136,7 +136,7 @@ def training_function(args, train_dataset, model):
                 if args.emb_l2_wt > 0.:
                     loss += args.emb_l2_wt * torch.linalg.vector_norm(model.cond_stage_model.transformer.get_input_embeddings().weight[-1, :])
                 if args.emb_cl_wt > 0.:
-                    pos_id = model.cond_stage_model.tokenizer.convert_tokens_to_ids(random.choice(args.pos_token_list))
+                    pos_id = model.cond_stage_model.tokenizer.convert_tokens_to_ids(random.choice(args.cl_pos_tokens))
                     neg_ids = random.sample(range(len(model.cond_stage_model.tokenizer) - 1), k=args.cl_batch_size-1)
                     all_ids = [pos_id] + neg_ids
                     all_embed = model.cond_stage_model.transformer.get_input_embeddings().weight[all_ids, :]
@@ -202,7 +202,7 @@ def arg_inputs():
     parser.add_argument('--vae_sampling', default='deterministic', choices=['deterministic', 'random'], type=str, help='Encoding distribution sampling method - deterministic sets var/std to 0.')
     parser.add_argument('--emb_l2_wt', default=0., type=float, help='Weight to apply on L2 loss for new token embedding - only runs if >0.')
     parser.add_argument('--emb_cl_wt', default=0., type=float, help='Weight to apply on contrastive loss for new token embedding - only runs if >0.')
-    parser.add_argument('--pos_token_list', default=None, nargs='+', type=str, help='Tokens to use as positive samples for new token.')
+    parser.add_argument('--cl_pos_tokens', default=None, nargs='+', type=str, help='Tokens to use as positive samples for new token.')
     parser.add_argument('--cl_batch_size', default=128, type=int, help='Batch size for contrastive learning.')
     parser.add_argument('--cl_beta', default=1., type=float, help='Weight to apply on negatives loss in contrastive learning - 0. means positive alignment only.')
     parser.add_argument('--cl_tau', default=0.2, type=float, help='Contrastive loss temperature.')

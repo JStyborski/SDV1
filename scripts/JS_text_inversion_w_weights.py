@@ -128,7 +128,7 @@ def training_function(args, train_dataset, model, base_embeds, base_wts):
                 if args.emb_l2_wt > 0.:
                     loss += args.emb_l2_wt * torch.linalg.vector_norm(new_embed)
                 if args.emb_cl_wt > 0.:
-                    pos_id = model.cond_stage_model.tokenizer.convert_tokens_to_ids(random.choice(args.pos_token_list))
+                    pos_id = model.cond_stage_model.tokenizer.convert_tokens_to_ids(random.choice(args.cl_pos_tokens))
                     neg_ids = random.sample(range(len(model.cond_stage_model.tokenizer) - 1), k=args.cl_batch_size-1)
                     all_ids = [pos_id] + neg_ids
                     all_embed = model.cond_stage_model.transformer.get_input_embeddings().weight[all_ids, :]
@@ -184,12 +184,12 @@ def arg_inputs():
     parser.add_argument('--accum_iter', default=1, type=int, help='Number of iterations to accumulate gradients before backpropagation.')
     parser.add_argument('--max_train_steps', default=10000, type=int, help='Maximum number of training steps before exit.')
     parser.add_argument('--vae_sampling', default='deterministic', choices=['deterministic', 'random'], type=str, help='Encoding distribution sampling method - deterministic sets var/std to 0.')
-    parser.add_argument('--base_tokens', default=None, nargs='+', type=str, help='Tokens to use as embedding basis for learning embedding weights - set as None to use all embeddings.')
+    parser.add_argument('--wts_base_tokens', default=None, nargs='+', type=str, help='Tokens to use as embedding basis for learning embedding weights - set as None to use all embeddings.')
     parser.add_argument('--wts_init', default='normal', choices=['normal', 'zeros'], type=str, help='Gaussian or zero weight initialization.')
     parser.add_argument('--wts_softmax', default=True, type=lambda x: bool(strtobool(x)), help='Whether to apply softmax to embedding weights.')
     parser.add_argument('--emb_l2_wt', default=0., type=float, help='Weight to apply on L2 loss for new token embedding - only runs if >0.')
     parser.add_argument('--emb_cl_wt', default=0., type=float, help='Weight to apply on contrastive loss for new token embedding - only runs if >0.')
-    parser.add_argument('--pos_token_list', default=None, nargs='+', type=str, help='Tokens to use as positive samples for new token.')
+    parser.add_argument('--cl_pos_tokens', default=None, nargs='+', type=str, help='Tokens to use as positive samples for new token.')
     parser.add_argument('--cl_batch_size', default=128, type=int, help='Batch size for contrastive learning.')
     parser.add_argument('--cl_beta', default=1., type=float, help='Weight to apply on negatives loss in contrastive learning - 0. means positive alignment only.')
     parser.add_argument('--cl_tau', default=0.2, type=float, help='Contrastive loss temperature.')
@@ -232,8 +232,8 @@ if __name__ == '__main__':
     args.new_token_id = tokenizer.convert_tokens_to_ids(args.new_token)
     text_encoder.resize_token_embeddings(len(tokenizer))
 
-    if args.base_tokens is not None:
-        base_ids = tokenizer.convert_tokens_to_ids(args.base_tokens)
+    if args.wts_base_tokens is not None:
+        base_ids = tokenizer.convert_tokens_to_ids(args.wts_base_tokens)
         base_embeds = text_encoder.get_input_embeddings().weight.data[base_ids].detach()
     else:
         base_embeds = text_encoder.get_input_embeddings().weight.data.detach()
