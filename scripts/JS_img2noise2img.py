@@ -1,12 +1,12 @@
 import torch
 
-def image_to_noise(image_batch, model, sampler, t_enc, cond, uncond, cfg_scale, record_latents=False):
+def image_to_noise(image_batch, model, sampler, n_steps, cond, uncond, cfg_scale, record_latents=False):
     # Initialize x_t and loop through prediction steps
     condInput = cond if uncond is None or cfg_scale == 1. else torch.cat([cond, uncond], dim=0)
     x_t = image_batch
     latentList = [x_t.detach().cpu()] if record_latents else None
     with torch.no_grad():
-        for tIdx in range(t_enc):
+        for tIdx in range(n_steps):
             t = sampler.ddim_timesteps_prev[tIdx]
             if uncond is None or cfg_scale == 1.:
                 eps_t = model.apply_model(x_t, torch.full([len(x_t)], t, device=x_t.device), condInput)
@@ -24,13 +24,13 @@ def image_to_noise(image_batch, model, sampler, t_enc, cond, uncond, cfg_scale, 
                 latentList.append(x_t.cpu())
     return x_t, latentList
 
-def noise_to_image(noise_batch, model, sampler, t_enc, cond, uncond, cfg_scale, record_latents=False):
+def noise_to_image(noise_batch, model, sampler, n_steps, cond, uncond, cfg_scale, record_latents=False):
     # Initialize x_t and loop through prediction steps
     condInput = cond if uncond is None or cfg_scale == 1. else torch.cat([cond, uncond], dim=0)
     x_t = noise_batch
     latentList = [x_t.detach().cpu()] if record_latents else None
     with torch.no_grad():
-        for tIdx in reversed(range(t_enc)):
+        for tIdx in reversed(range(n_steps)):
             t = sampler.ddim_timesteps[tIdx]
             if uncond is None or cfg_scale == 1.:
                 eps_t = model.apply_model(x_t, torch.full([len(x_t)], t, device=x_t.device), condInput)
